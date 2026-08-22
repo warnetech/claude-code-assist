@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Python (warnetech_cli/, warnetech_control_plane/, warnetech_server/)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build & Runtime
+dist/
+build/
+.wrangler/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary
+*.tmp
+*.temp
+/tmp
+
+# Secrets (never commit)
+.env.production.local
+.env.*.key
+secrets.json
+
+# Config
+~/.claude-cli/config.json
+config.local.json
+
+# OS
+Thumbs.db
+.DS_Store

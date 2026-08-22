@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "warnetech"
+version = "0.1.0"
+description = "Warnetech system (server, control-plane, AI controller, connectors)"
+requires-python = ">=3.10"
+dependencies = [
+    # Required: SecurityManager and aes_gcm_encrypt/decrypt raise RuntimeError without it.
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+# Guarded imports with availability flags — the code degrades rather than crashes.
+compression = ["lz4>=4.3", "zstandard>=0.22"]
+parquet = ["pyarrow>=15.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6"]
+
+[tool.setuptools]
+packages = [
+    "warnetech_envelope",
+    "warnetech_operator",
+    "warnetech_server",
+    "warnetech_control_plane",
+    "warnetech_ai_controller",
+    "warnetech_connectors",
+    "warnetech_cli",
+    "supabase_schema"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]

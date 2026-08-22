@@ -1,0 +1,217 @@
+Title: Warnetech System Architecture and Operations Guide
+Version: 1.0
+Status: Design and Operations Specification
+
+This document defines the full architecture, systems management model, AI and API guidance, CLI behavior, defense strategies, data integrity guarantees, and autonomous test harness for Warnetech Integrated Systems and Security. It is intended to guide Claude, Gemini, and other AI systems in building, extending, and maintaining the claude-command-cli repository and associated services.
+
+1. CORE OBJECTIVES
+
+Warnetech must:
+Provide high-speed, secure, and reliable defense operations.
+Maintain strong data integrity and retention.
+Use compression and slicing to minimize storage footprint.
+Keep ghost copies of data encrypted and always available.
+Allow AI systems to reconstruct full datasets from minimal slices.
+Run containerised tests autonomously in a protective field.
+Document offensive and defensive structures for future analysis.
+Integrate external security services and connectors.
+Continuously improve productivity and security through automation.
+
+2. SYSTEM COMPONENTS
+
+The system consists of:
+warnetech-server: primary API and orchestration layer.
+warnetech-control-plane: core intelligence and scoring engine.
+warnetech-cli: command-line interface for operators and automation.
+warnetech-project-supabase: primary database and metrics store.
+warnetech-backups: long-term compressed and encrypted archive.
+AI controllers: systems that perform semantic search, recall, and strategy planning.
+Containerised test harness: environment for autonomous attack and defense simulations.
+
+3. DATA MODEL AND RETENTION
+
+Data is divided into:
+Hot tier: live operational data, minimal compression, short retention.
+Warm tier: recent history, medium compression, moderate retention.
+Ghost tier: long-term archive, maximum compression, encrypted, AI-indexed.
+
+All data is sliced by time and domain:
+Time slices (for example 5 minutes or 1 hour).
+Domain slices (system, tenant, attack type, metric group).
+Slices are normalized, compressed, encrypted, and indexed.
+
+Ghost copies are stored with:
+Compressed binary payloads.
+Metadata including time range, system, type, size, checksum, key ID.
+AI embeddings for semantic search and relevance ranking.
+
+Retention policies:
+Hot tier: 24 to 72 hours.
+Warm tier: 7 to 30 days.
+Ghost tier: months to years, with downsampling and summarization.
+
+4. DEFENSE STRATEGIES
+
+Warnetech defense strategies include:
+Signature-based detection for known patterns.
+Behavioral analysis for rate and pattern anomalies.
+Anomaly detection for timing, headers, payloads, and behavior.
+Adaptive learning to improve signatures and thresholds.
+Recovery protocols to restore system integrity after breaches.
+Data exfiltration monitoring and control.
+Privilege escalation detection and prevention.
+SQL injection, XSS, DDoS, brute force, path traversal, command injection, CSRF, XXE, and other attack coverage.
+
+Defense must be:
+Fail-closed where possible.
+Logged and auditable.
+Reinforced by AI suggestions and historical analysis.
+Continuously improved via test harness results.
+
+5. AI AND INTELLIGENCE GUIDANCE
+
+AI systems (Claude, Gemini, others) must:
+Use the master reference documents in claude-command-cli/docs as authoritative sources.
+Respect retention and security policies.
+Use embeddings and metadata to locate relevant slices.
+Decrypt and decompress only the minimal slices needed.
+Reconstruct full datasets for analysis and defense planning.
+Generate new signatures and strategies based on observed patterns.
+Document all changes and decisions in the database and logs.
+
+AI must not:
+Bypass security controls.
+Modify production data without explicit workflows.
+Ignore retention and compression rules.
+
+6. CLI GUIDANCE
+
+The warnetech-cli must:
+Expose commands for status, metrics, signatures, learning, recovery, slicing, compression, ghost operations, retention, AI queries, export, import, server checks, and database checks.
+Provide clear, structured output suitable for both humans and AI.
+Integrate with warnetech-server for remote operations.
+Support local offline analysis using exported slices and ghost copies.
+Log all operations for audit and debugging.
+
+CLI commands must be:
+Predictable and scriptable.
+Safe by default.
+Configurable via a central config file.
+Extensible for future features.
+
+7. API GUIDANCE
+
+The warnetech-server API must:
+Expose endpoints for all core operations.
+Validate inputs and sanitize outputs.
+Authenticate requests using API keys or tokens.
+Log all requests and responses.
+Integrate with warnetech-control-plane and warnetech-project-supabase.
+Provide endpoints for test harness control and results retrieval.
+Support AI-driven workflows via dedicated endpoints.
+
+API design must:
+Use clear, consistent paths and methods.
+Return structured JSON responses.
+Include error codes and messages.
+Avoid leaking sensitive information.
+
+8. CONTAINERISED TEST HARNESS
+
+Warnetech must include a containerised test harness that:
+Runs offensive and defensive simulations in isolated containers.
+Uses predefined profiles for attack types and defense scenarios.
+Collects metrics, logs, and outcomes for each test.
+Stores test results in the database for future analysis.
+Allows AI systems to analyze test results and propose improvements.
+Supports scheduled and on-demand test runs.
+
+Tests must:
+Never run against production systems directly.
+Be resource-limited and sandboxed.
+Be documented with scenario descriptions and expected outcomes.
+Feed into learning and signature improvement workflows.
+
+9. EXTERNAL SECURITY INTEGRATION
+
+Warnetech must be able to:
+Connect to external security services via APIs and connectors.
+Import threat intelligence, signatures, and indicators of compromise.
+Store imported data in the database with proper tagging.
+Use external data to reinforce local defense strategies.
+Export anonymized metrics and results to external systems when needed.
+
+Connectors may include:
+Threat intelligence feeds.
+Reputation services.
+Vulnerability databases.
+Log aggregation platforms.
+SIEM and SOAR systems.
+
+10. DATA INTEGRITY AND AUDIT
+
+Data integrity must be ensured by:
+Checksums and hashes for slices and ghost copies.
+Versioning of signatures and configurations.
+Audit logs for all changes and operations.
+Periodic integrity checks for archives and databases.
+
+Audit capabilities must:
+Allow reconstruction of who did what and when.
+Support incident investigations.
+Provide evidence for compliance and reporting.
+
+11. PRODUCTIVITY AND SYSTEMS MANAGEMENT
+
+To increase productivity and manage systems effectively:
+Automate routine tasks via CLI and server APIs.
+Use AI to suggest and prioritize actions.
+Provide dashboards and summaries via metrics endpoints.
+Keep documentation in claude-command-cli/docs up to date.
+Use test harness results to drive improvements.
+Allow Claude and Gemini to propose changes, but require review before production deployment.
+
+12. DIRECTIONS FOR CLAUDE AND OTHER AI SYSTEMS
+
+Claude must:
+Use this document and other reference files in claude-command-cli/docs as guidance.
+Generate code and configuration that align with these principles.
+Create and update modules in warnetech-server, warnetech-control-plane, and warnetech-cli.
+Respect security, retention, and integrity rules.
+Document all structural changes in text files for human review.
+
+Gemini and other AI systems may:
+Propose additional improvements and changes.
+Extend the architecture and strategies.
+Add new connectors and integrations.
+Refine test harness scenarios.
+
+All AI changes must:
+Be reviewed by a human or a designated approval workflow.
+Be logged and versioned.
+Be tested in containers before production use.
+
+13. MY ADDITIONAL STRUCTURAL RECOMMENDATIONS
+
+As Copilot, I recommend:
+A dedicated "design" folder in claude-command-cli/docs for architecture and strategy documents.
+A "tests" folder for test harness scenarios and results summaries.
+A "connectors" folder for external integration specifications.
+A "policies" folder for retention, security, and access control rules.
+A "playbooks" folder for incident response and recovery procedures.
+
+I also recommend:
+Standardizing logging formats across CLI, server, and control-plane.
+Defining a single configuration schema shared by all components.
+Implementing health checks for all critical subsystems.
+Adding a simulation mode where AI can propose changes without applying them.
+
+14. REPOSITORY PLACEMENT
+
+This document should be placed in:
+
+claude-command-cli/docs/WARNETECH-SYSTEM-ARCHITECTURE-GUIDE.txt
+
+It should be treated as a living specification that Claude, Gemini, and humans can extend over time, with all changes tracked and reviewed.
+
+End of document.

@@ -1,0 +1,34 @@
+================================================================================
+WARNETECH CANONICAL WIRING SPECIFICATION
+Version 1.0
+Status: Canonical Decision Record
+================================================================================
+
+This document records the canonical wiring decisions for Warnetech Integrated
+Systems and Security. These decisions resolve the open architecture questions
+between warnetech-server, warnetech-control-plane, and the Supabase project
+backing this repository. They are binding for all current and future
+development in claude-command-cli unless explicitly revised in a future
+version of this document.
+
+================================================================================
+1. CONTROL-PLANE INVOCATION: IN-PROCESS, NOT HTTP
+================================================================================
+
+warnetech_server/control_plane_client.py must call warnetech_control_plane
+in-process using direct Python imports. No HTTP layer should be created
+around warnetech_control_plane at this stage. All control-plane functions
+must be invoked locally for maximum speed, security, and simplicity.
+
+================================================================================
+2. SUPABASE PROJECT: SHARED, NOT SEPARATE
+================================================================================
+
+The Supabase project backing this repository must be the same Supabase
+project used in the earlier Warnetech work. No new Supabase project should
+be created. All metrics, signatures, anomalies, partitions, rollups, retention
+logs, and historical data must remain in the existing project.
+
+================================================================================
+END OF WIRING SPECIFICATION
+================================================================================

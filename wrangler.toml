@@ -1,0 +1,36 @@
+name = "claude-command-cli"
+main = "worker/index.js"
+compatibility_date = "2024-01-01"
+# worker/utils/crypto.js imports from "node:crypto" (createHash, createHmac,
+# timingSafeEqual, webcrypto) for the encryption used by decryptRequest() —
+# this flag is required for that to resolve on the real Workers runtime.
+# Jest tests don't need it (they run under plain Node), but `wrangler dev`
+# and a real deployment do.
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (never put real values here — use `wrangler secret put NAME`):
+#   API_KEY            shared secret with warnetech_cli_legacy, used to derive
+#                       the AES-256-GCM key (see worker/utils/crypto.js) and
+#                       to verify the X-API-Key-Hash header. Required for any
+#                       encrypted /cli request to decrypt.
+#   NVIDIA_API_KEY      NVIDIA Nemotron API key, used by `warnetech ai`.
+
+# Optional KV namespace: without it, rate limiting (worker/utils/security.js)
+# and quota tracking / replay-dedup (worker/commands/sys.js) degrade to
+# fail-open no-ops rather than erroring — see the comments in those files.
+# Uncomment and fill in an id after `wrangler kv namespace create CLI_KV`.
+# [[kv_namespaces]]
+# binding = "KV"
+# id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[env.development]
+routes = []
+vars = { ENVIRONMENT = "development" }
+# vars.WARNETECH_SERVER_URL = base URL of a running warnetech-server, used
+# by `warnetech sync` / `warnetech detect-anomalies` (worker/commands/sys.js)
+# to forward to the canonical Python backend. Omit it and those commands
+# report "not configured" instead of fabricating results.
+
+[env.production]
+routes = []
+vars = { ENVIRONMENT = "production" }

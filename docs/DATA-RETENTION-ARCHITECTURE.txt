@@ -1,0 +1,430 @@
+================================================================================
+WARNETECH DATA RETENTION AND CORE SYSTEMS ARCHITECTURE
+Version 1.0
+Status: Production Specification
+================================================================================
+
+This document defines the complete architecture for data retention, compression,
+slicing, ghost-copy storage, and AI-driven recall for Warnetech Integrated
+Systems and Security. It is designed for high-speed processing, minimal storage
+footprint, and intelligent reconstruction of full datasets from compressed
+subsets.
+
+================================================================================
+1. SYSTEM GOALS
+================================================================================
+
+The Warnetech data retention system must achieve the following:
+
+✓ Store all operational data with minimal space usage
+✓ Maintain a ghost copy of every slice of data, encrypted and always available
+✓ Allow the AI controller to reconstruct full datasets from a small percentage
+  of stored data
+✓ Provide extremely fast access for live systems
+✓ Use Linux-native compression, slicing, and copy-on-write techniques
+✓ Ensure long-term retention without performance degradation
+✓ Support selective recall, partial decompression, and intelligent indexing
+
+================================================================================
+2. DATA TIERS
+================================================================================
+
+TIER 0: HOT PATH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Purpose:       Live operational data
+Storage:       NVMe SSD
+Format:        Minimal compression using LZ4 or ZSTD-fast
+Retention:     24 to 72 hours
+Notes:         Used by warnetech-server for real-time operations
+
+Characteristics:
+  • Minimal latency (<10ms access time)
+  • Maximum availability and throughput
+  • Fast compression for speed over ratio
+  • Used for active threat detection and response
+  • Subject to immediate purge policies
+
+TIER 1: WARM STORE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Purpose:       Recent history
+Storage:       Local or network disk
+Format:        Columnar compressed formats such as Parquet with ZSTD-medium
+Retention:     7 to 30 days
+Notes:         Used for analytics, batch processing, and near-term recall
+
+Characteristics:
+  • Moderate latency (<100ms access time)
+  • High availability for analytics
+  • Medium compression ratio
+  • Used for trending and pattern analysis
+  • Accessible without full decompression
+
+TIER 2: GHOST COPY ARCHIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Purpose:       Long-term compressed and encrypted storage
+Storage:       warnetech-backups
+Format:        Chunked, sliced, encrypted binary blocks
+Retention:     Months to years
+Notes:         AI-indexed, minimal space usage, reconstructable on demand
+
+Characteristics:
+  • Very high latency (seconds to minutes for reconstruction)
+  • Minimal storage footprint (90%+ compression)
+  • Full encryption for security
+  • AI-driven indexing for intelligent recall
+  • Reconstructable on demand without full storage
+
+================================================================================
+3. DATA SLICING MODEL
+================================================================================
+
+All data is sliced before storage using the following techniques:
+
+TIME SLICING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Data is divided into fixed time windows such as:
+  • 5-minute slices for high-resolution data
+  • 1-hour slices for aggregated data
+  • 1-day slices for historical archives
+
+Benefits:
+  • Enables selective time-based recall
+  • Reduces memory footprint per slice
+  • Supports efficient time-range queries
+  • Allows parallel processing of slices
+
+DOMAIN SLICING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Data is divided by:
+  • System (warnetech-server, warnetech-control-plane, etc.)
+  • Tenant or namespace
+  • Attack type or threat category
+  • Metric group or sensor type
+  • Event category or severity
+
+Benefits:
+  • Enables selective domain-based recall
+  • Reduces cross-domain processing overhead
+  • Supports multi-tenant isolation
+  • Allows category-specific compression tuning
+
+GRANULARITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Slices are kept small to enable selective recall:
+  • Typical size: 10 to 50 megabytes per slice
+  • Hot tier: Smaller slices for speed
+  • Ghost tier: Larger slices for compression efficiency
+  • Adaptive slicing based on content characteristics
+
+NORMALIZATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+All slices are converted to a canonical schema:
+  • NDJSON (newline-delimited JSON) for structured data
+  • Parquet for columnar analytics
+  • Apache Arrow for in-memory processing
+  • Binary Protocol Buffers for tight encoding
+
+COMPRESSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Compression strategy varies by tier:
+
+Hot tier:     LZ4 (speed optimized)
+              • Compression ratio: 2-3x
+              • Decompression speed: >1GB/s
+              • Used for real-time data
+
+Warm tier:    ZSTD-medium
+              • Compression ratio: 3-5x
+              • Decompression speed: 500MB/s
+              • Used for analytics
+
+Ghost tier:   ZSTD-max or Brotli
+              • Compression ratio: 5-10x
+              • Decompression speed: 50-200MB/s
+              • Used for archival
+
+ENCRYPTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Each slice is encrypted using:
+  • Algorithm: AES-256-GCM
+  • Per-slice keys or key hierarchy
+  • IV: Randomly generated per slice
+  • Authentication: GCM tag for integrity
+
+INDEXING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Metadata and embeddings are generated for each slice:
+  • Time range (start, end)
+  • System and domain tags
+  • Event count and types
+  • Statistical summary (min, max, mean)
+  • AI embeddings for semantic search
+  • Checksum for integrity verification
+  • Encryption key reference
+
+================================================================================
+4. GHOST COPY DESIGN
+================================================================================
+
+The ghost copy is the long-term representation of all data in warnetech-backups.
+
+STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Each slice contains:
+
+1. Compressed binary payload
+   • Algorithm: ZSTD-max or Brotli
+   • Size: Typical 10-50MB uncompressed → 1-5MB compressed
+
+2. Metadata including:
+   • Time range (start_time, end_time)
+   • System identifier
+   • Data type and category
+   • Original size and compressed size
+   • Checksum (SHA-256)
+   • Encryption key ID
+   • Compression algorithm
+   • Creation timestamp
+   • Retention expiration date
+
+3. AI embeddings for semantic search and relevance ranking
+
+STORAGE LAYOUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Directory structure in warnetech-backups:
+
+  ghost/
+    YYYY/
+      MM/
+        DD/
+          system_name/
+            slice-id.bin         (compressed, encrypted payload)
+
+  ghost-index/
+    YYYY/
+      MM/
+        DD/
+          system_name/
+            slice-id.json        (metadata and embeddings)
+
+Example:
+  ghost/2026/08/05/warnetech-server/slice-20260805T1200Z-001.bin
+  ghost-index/2026/08/05/warnetech-server/slice-20260805T1200Z-001.json
+
+INDEX ENTRY FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{
+  "slice_id": "slice-20260805T1200Z-001",
+  "time_range": {
+    "start": "2026-08-05T12:00:00Z",
+    "end": "2026-08-05T12:05:00Z"
+  },
+  "system": "warnetech-server",
+  "data_type": "threat_events",
+  "category": "sql_injection",
+  "original_size": 52428800,
+  "compressed_size": 2097152,
+  "checksum": "sha256:abc123...",
+  "encryption_key_id": "key-2026-08-01",
+  "compression_algorithm": "zstd-max",
+  "created_at": "2026-08-05T12:30:00Z",
+  "expires_at": "2027-08-05T12:30:00Z",
+  "event_count": 15247,
+  "embeddings": [0.125, 0.456, 0.789, ...],
+  "stats": {
+    "event_severity_min": 1,
+    "event_severity_max": 9,
+    "event_severity_mean": 5.2,
+    "false_positive_rate": 0.015
+  }
+}
+
+GHOST COPY CHARACTERISTICS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Always available for recall
+✓ Fully encrypted at rest
+✓ AI-indexed for intelligent querying
+✓ Minimal storage footprint (90%+ compression)
+✓ Long-term retention (months to years)
+✓ Reconstructable on demand
+✓ Immutable and audit-logged
+
+================================================================================
+5. AI-DRIVEN RECALL PROCESS
+================================================================================
+
+The AI controller performs the following steps to reconstruct data:
+
+STEP 1: QUERY METADATA AND EMBEDDINGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Search ghost-index/ for relevant slices
+• Use embeddings for semantic similarity search
+• Filter by time range, system, and category
+• Rank by relevance score
+• Retrieve without decompressing full archive
+
+STEP 2: SELECT MINIMAL SUBSET OF SLICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Identify the minimum set of slices needed
+• Typically requires <10% of total archived data
+• Prioritize slices with highest relevance scores
+• Consider time-range and domain requirements
+• Optimize for minimal decompression overhead
+
+STEP 3: DECRYPT SELECTED SLICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Retrieve key references from metadata
+• Access encryption keys from key hierarchy
+• Decrypt each selected slice using AES-256-GCM
+• Verify authentication tags for integrity
+• Discard corrupted slices and retry
+
+STEP 4: DECOMPRESS SLICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Use algorithm from slice metadata
+• Decompress into temporary workspace
+• Verify checksums against metadata
+• Stream decompression for memory efficiency
+• Clean up temporary files after use
+
+STEP 5: RECONSTRUCT FULL DATASETS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Merge decompressed slices in time order
+• Sort by time, system, and event ID
+• Deduplicate if necessary
+• Apply any aggregations or transformations
+• Validate referential integrity
+• Generate final dataset in requested format
+
+STEP 6: PRESENT TO REQUESTOR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Stream reconstructed data to warnetech-server
+• Or write to temporary file for warnetech-cli
+• Include metadata about reconstruction
+• Log recall operation for audit trail
+• Clean up resources
+
+EFFICIENCY CHARACTERISTICS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Full historical reconstruction using <10% of stored data
+• Semantic search using embeddings (no full-text scanning)
+• Streaming decompression (minimal memory usage)
+• Parallel processing of independent slices
+• Adaptive ranking based on relevance scores
+
+================================================================================
+6. LINUX COMPRESSION AND FILESYSTEM TACTICS
+================================================================================
+
+The system uses Linux-native features for performance and efficiency.
+
+FILESYSTEM COMPRESSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Filesystems with transparent compression support:
+
+btrfs (Recommended)
+  • Native compression: LZ4, ZSTD
+  • Copy-on-write snapshots
+  • Subvolume-level retention policies
+  • Online defragmentation
+
+zfs
+  • Native compression: LZJB, GZIP, ZSTD
+  • Deduplication for identical blocks
+  • Snapshots with instant cloning
+  • Block-level checksums
+
+Compression by tier:
+
+Hot tier:     LZ4 (fast, 2-3x ratio)
+Warm tier:    ZSTD-medium (moderate, 3-5x ratio)
+Ghost tier:   ZSTD-max (slow, 5-10x ratio)
+
+BLOCK-LEVEL DEDUPLICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+zfs dedup or btrfs reflinks reduce repeated patterns:
+  • Detects identical data blocks across slices
+  • Single physical block stores all identical content
+  • Reference counting for safe deletion
+  • Saves 20-40% of storage for repetitive data
+
+COPY-ON-WRITE SNAPSHOTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Used to generate ghost copies with minimal overhead:
+  • Hot tier data snapshotted to warm tier with COW
+  • Warm tier data snapshotted to ghost tier with COW
+  • Snapshots take <100ms and use minimal space
+  • Incremental backups using snapshot diff
+  • Fast recovery by reverting to snapshot
+
+================================================================================
+7. DATA RETENTION POLICIES
+================================================================================
+
+Retention policies are defined per tier with automatic expiration.
+
+TIER 0: HOT TIER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Retention Period:  24 to 72 hours
+Purpose:           Real-time operations
+Expiration:        Automatic purge after retention window
+Storage:           NVMe SSD
+Compression:       LZ4-fast
+Encryption:        Optional (performance optimized)
+
+Characteristics:
+  ✓ Immediate deletion of expired data
+  ✓ No archival before deletion
+  ✓ Minimal retention for cost optimization
+
+TIER 1: WARM TIER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Retention Period:  7 to 30 days
+Purpose:           Analytics and near-term recall
+Expiration:        Automatic promotion to ghost tier
+Storage:           Local or network disk
+Compression:       ZSTD-medium
+Encryption:        Recommended
+
+Characteristics:
+  ✓ Accessible for analytics and dashboards
+  ✓ No full decompression required for queries
+  ✓ Promotion to ghost tier before deletion
+
+TIER 2: GHOST TIER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Retention Period:  Months to years
+Purpose:           Long-term compressed storage with AI-driven recall
+Expiration:        Policy-based deletion after retention
+Storage:           warnetech-backups
+Compression:       ZSTD-max or Brotli
+Encryption:        Required (AES-256-GCM)
+
+Characteristics:
+  ✓ Minimal storage footprint
+  ✓ Always encrypted at rest
+  ✓ AI-indexed for intelligent recall
+  ✓ Reconstructable on demand
+  ✓ Immutable for compliance
+
+DEFAULT RETENTION SCHEDULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Time     Tier              Retention     Action
+────     ────              ---------     ──────
+0-3h     Tier 0 (Hot)      2-3 days      Real-time processing
+3h-7d    Tier 1 (Warm)     7-30 days     Analytics and recall
+7d+      Tier 2 (Ghost)    1+ years      Long-term archive
+
+Typical flow:
+  Incoming data → Tier 0 (24-72h) → Tier 1 (7-30d) → Tier 2 (1+y)
+
+================================================================================
+END OF DATA RETENTION ARCHITECTURE SPECIFICATION
+================================================================================
+
+This document is the authoritative reference for Warnetech data retention,
+compression, slicing, and AI-driven recall capabilities.
+
+Version:  1.0
+Status:   Production Specification
+Updated:  2026-08-05

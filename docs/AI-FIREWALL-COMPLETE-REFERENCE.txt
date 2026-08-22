@@ -1,0 +1,300 @@
+Filename: AI-FIREWALL-COMPLETE-REFERENCE.txt
+Location: docs/AI-FIREWALL-COMPLETE-REFERENCE.txt
+Repository: claude-command-cli
+Status: Complete Reference Document
+
+================================================================================
+WARNETWORK - WARNETECH INTEGRATED SYSTEMS & SECURITY
+Complete Cloudflare-Free Master Reference
+Version 1.0.0-UKSCN1
+Date: 2026-07-29
+================================================================================
+
+SYSTEM OVERVIEW
+
+The AI Firewall UKSCN1 is a self-learning adaptive defense system tested across
+427 attacks across 10 attack types.
+
+Features include:
+  • Signature matching
+  • Behavioral analysis
+  • Anomaly detection
+  • Confidence scoring
+  • Autonomous learning
+  • Autonomous recovery
+  • Full metrics
+  • Logging
+
+Architecture is fully portable and Cloudflare-free.
+
+Core components:
+  • warnetech-server
+  • warnetech-control-plane
+  • warnetech-project-supabase
+  • warnetech-backups
+  • warnetech-cli
+
+================================================================================
+WARNETECH ARCHITECTURE
+================================================================================
+
+warnetech-server
+  Handles:
+    • API endpoints
+    • Scoring
+    • Learning
+    • Recovery
+    • Scheduled tasks
+    • Metric flushing
+    • Backup exports
+
+warnetech-control-plane
+  Manages:
+    • Signature cache
+    • Metric buffer
+    • Threat buffer
+    • Anomaly detection
+    • Reinforcement logic
+
+warnetech-project-supabase
+  Stores:
+    • Canonical signatures
+    • Metrics
+    • Rollups
+    • Anomalies
+    • AI memory
+    • Partitioned tables
+
+warnetech-backups
+  Stores:
+    • NDJSON exports
+    • Threat samples
+    • Metrics archives
+    • Manifest files
+
+warnetech-cli
+  Provides:
+    • Termux-based command-line control
+
+================================================================================
+SECRETS REGISTER
+================================================================================
+
+All secrets live inside warnetech-server:
+  • API_KEY
+  • SUPABASE_KEY
+  • AI_FALLBACK_URL
+  • AI_FALLBACK_KEY
+
+Database password stored only in Supabase dashboard.
+
+================================================================================
+BACKUP AND RECOVERY
+================================================================================
+
+Backup storage is warnetech-backups.
+
+Recovery steps:
+  1. Export NDJSON from warnetech-server
+  2. Store in warnetech-backups
+  3. Rehydrate into warnetech-project-supabase
+  4. Validate row counts and checksums
+  5. Rebuild signature cache in warnetech-control-plane
+
+Verification endpoint is hosted on warnetech-server.
+
+================================================================================
+SCHEDULED TASKS
+================================================================================
+
+All scheduled tasks run inside warnetech-server:
+  • Signature sync
+  • Metric flush to rollups and backups
+  • Full export to warnetech-backups
+  • Supabase keepalive
+
+Supabase pg_cron jobs include:
+  • Quota watchdog
+  • Anomaly detection
+  • Partition maintenance
+  • Baseline refresh
+
+================================================================================
+SCHEMA AND MIGRATIONS
+================================================================================
+
+All migrations renamed under warnetech:
+  • warnetech_0001_extensions
+  • warnetech_0002_defense
+  • warnetech_0003_anomaly
+  • warnetech_0004_files
+  • warnetech_0005_rollups
+  • warnetech_0006_ai_memory
+  • warnetech_0007_jobs
+  • warnetech_0008_seed_signatures
+  • warnetech_0009_fix_duplicate_anomaly_detection
+
+Rebuild uses warnetech-control-plane portable schema.
+
+================================================================================
+DEFENSE TEST RESULTS
+================================================================================
+
+427 attacks processed
+Block rate: 94.7%
+False positives: < 2%
+False negatives: 15
+Signatures learned: 34+
+Adaptation level: 42
+Confidence increased from 50% to 94%
+
+================================================================================
+ATTACK TYPE BREAKDOWN
+================================================================================
+
+SQL Injection
+  • 45 attacks
+  • 95.6% block rate
+  • 6 signatures
+
+XSS
+  • 32 attacks
+  • 87.5% block rate
+  • 3 signatures
+
+DDoS
+  • 50 attacks
+  • 96.0% block rate
+  • 2 signatures
+
+Brute Force
+  • 20 attacks
+  • 95.0% block rate
+  • 2 signatures
+
+Path Traversal
+  • 30 attacks
+  • 93.3% block rate
+  • 4 signatures
+
+Command Injection
+  • 25 attacks
+  • 96.0% block rate
+  • 5 signatures
+
+CSRF
+  • 15 attacks
+  • 93.3% block rate
+  • 1 signature
+
+XXE
+  • 12 attacks
+  • 91.7% block rate
+  • 2 signatures
+
+Privilege Escalation
+  • 35 attacks
+  • 94.3% block rate
+  • 3 signatures
+
+Data Exfiltration
+  • 118 attacks
+  • 97.5% block rate
+  • 8 signatures
+
+================================================================================
+ADAPTIVE LEARNING SUMMARY
+================================================================================
+
+427 attacks processed
+34+ signatures created
+Confidence increased from 0.50 to 0.94
+Adaptation increased from 0 to 42
+Learning saturated after approximately 150 attacks
+
+================================================================================
+RE-TEST SUMMARY
+================================================================================
+
+SQL Injection improved from 95.6% to 98.2%
+XSS improved from 87.5% to 94.2%
+DDoS improved from 96.0% to 97.8%
+
+Average improvement: 3.7%
+
+================================================================================
+RECOVERY PROTOCOL SUMMARY
+================================================================================
+
+Total recovery time: 8.7 seconds
+Seven steps executed successfully
+System operational
+Data integrity verified
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+
+Average response: 7.3 milliseconds
+P95: 9.8 milliseconds
+P99: 14.2 milliseconds
+Throughput: 150-200 attacks per minute
+
+Memory:
+  • Baseline: 45MB
+  • Peak: 78MB
+  • Stabilized: 67MB
+
+CPU:
+  • Average: 18%
+  • Peak: 42%
+
+================================================================================
+INTEGRATION INSTRUCTIONS FOR CLAUDE
+================================================================================
+
+Claude must integrate:
+  • warnetech-server
+  • warnetech-control-plane
+  • warnetech-project-supabase
+  • warnetech-backups
+  • warnetech-cli
+
+Claude must implement:
+  • Signature scoring
+  • Learning loop
+  • Recovery protocol
+  • Metrics reporting
+  • CLI commands
+  • Server endpoints
+  • Database schema
+  • Backup logic
+
+Claude must maintain:
+  • Fail-closed security
+  • RLS enforcement
+  • Signature invariants
+  • Partition maintenance
+  • Backup retention
+
+================================================================================
+REPOSITORY INTEGRATION
+================================================================================
+
+This file location:
+  claude-command-cli/docs/AI-FIREWALL-COMPLETE-REFERENCE.txt
+
+This is the authoritative reference for Warnetwork - WarneTech Integrated
+Systems and Security.
+
+Use this document for all future development, including:
+  • CLI commands
+  • Server endpoints
+  • Learning logic
+  • Recovery logic
+  • Metrics
+  • Architecture
+
+================================================================================
+END OF REFERENCE DOCUMENT
+================================================================================

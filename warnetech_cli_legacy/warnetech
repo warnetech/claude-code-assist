@@ -1,0 +1,808 @@
+#!/usr/bin/env node
+
+// DEPRECATED — this is the legacy Node.js CLI, kept for its GitHub
+// operations, AI chat, and self-evolution commands that the canonical
+// Python CLI (warnetech_cli/) does not implement. For status, metrics,
+// signatures, learn, recover, slice, compress, ghost, retention, ai-query,
+// and db operations, use warnetech_cli instead — it talks to
+// warnetech-server's real HTTP API. See warnetech_cli_legacy as its own
+// name: nothing here should be treated as the primary CLI going forward.
+//
+// Termux CLI - Main entrypoint
+// Usage: warnetech <command> [args...]
+
+import { Command } from "commander";
+import { readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import os from "os";
+import { exec } from "child_process";
+import { promisify } from "util";
+import fs from "fs/promises";
+import {
+  encryptData,
+  decryptData,
+  generateHmacSignature,
+  generateRequestId,
+  hashApiKey,
+} from "./crypto.js";
+
+const execAsync = promisify(exec);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(
+  readFileSync(path.join(__dirname, "../package.json"), "utf-8"),
+);
+
+const program = new Command();
+
+program
+  .name("warnetech")
+  .description("Claude Command CLI for Termux")
+  .version(pkg.version);
+
+// Load config
+async function loadConfig() {
+  const configPath = path.join(os.homedir(), ".claude-cli", "config.json");
+  try {
+    const data = await fs.readFile(configPath, "utf-8");
+    return JSON.parse(data);
+  } catch (error) {
+    return { worker_url: "http://localhost:8787", api_key: "dev-key" };
+  }
+}
+
+// Send request to Worker
+async function sendToWorker(command, args = [], config = null) {
+  if (!config) config = await loadConfig();
+
+  const workerUrl = config.worker_url || "http://localhost:8787";
+  const apiKey = config.api_key || "dev-key";
+  const requestId = generateRequestId();
+  const timestamp = new Date().toISOString();
+
+  const payload = {
+    command,
+    args,
+  };
+
+  try {
+    // Encrypt payload
+    const encryptedPayload = await encryptData(JSON.stringify(payload), apiKey);
+
+    // Generate signature
+    const signature = generateHmacSignature(
+      { encrypted_data: encryptedPayload },
+      apiKey,
+    );
+
+    const request = {
+      encrypted_data: encryptedPayload,
+      signature,
+    };
+
+    const response = await fetch(`${workerUrl}/cli`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key-Hash": hashApiKey(apiKey),
+        "X-Request-ID": requestId,
+        "X-Timestamp": timestamp,
+      },
+      body: JSON.stringify(request),
+    });
+
+    const responseData = await response.json();
+
+    // Decrypt response if encrypted
+    if (responseData.encrypted_data && responseData.signature) {
+      try {
+        const decrypted = await decryptData(
+          responseData.encrypted_data,
+          apiKey,
+        );
+        return {
+          ok: response.ok,
+          status: response.status,
+          data: JSON.parse(decrypted),
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: `Failed to decrypt response: ${error.message}`,
+        };
+      }
+    }
+
+    return { ok: response.ok, status: response.status, data: responseData };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+// Ping command - Test connectivity with Worker
+program
+  .command("ping")
+  .description("Check connectivity with Worker")
+  .action(async () => {
+    try {
+      const config = await loadConfig();
+      console.log("> Checking Worker connectivity...");
+      const { ok, data, error } = await sendToWorker("ping", [], config);
+
+      if (!ok) {
+        console.log("✗ Error: Failed to connect to Worker");
+        console.log(`  Reason: ${error || data?.error}`);
+        process.exit(1);
+      }
+
+      console.log("✓ Ping: Connected");
+      console.log(`  Worker: ${config.worker_url}`);
+      console.log(`  Message: ${data.data.message}`);
+      console.log(
+        `  Latency: ${Date.now() - new Date(data.timestamp).getTime()}ms`,
+      );
+    } catch (error) {
+      console.log("✗ Error: Unexpected error");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// AI command
+program
+  .command("ai <prompt>")
+  .description("Ask Claude (NVIDIA Nemotron) anything")
+  .option("--stream", "Stream reasoning tokens")
+  .option("--timeout <seconds>", "Request timeout in seconds", "30")
+  .option("--model <model>", "AI model to use", "nemotron-3-ultra")
+  .action(async (prompt, options) => {
+    try {
+      const config = await loadConfig();
+
+      // Check for NVIDIA API key
+      if (!config.nemotron_api_key) {
+        console.log("✗ Error: NVIDIA_API_KEY not found in config");
+        console.log("  Run: warnetech init");
+        console.log('  For help: warnetech help --error "API_KEY not found"');
+        process.exit(1);
+      }
+
+      console.log("> Sending prompt to Claude...");
+      const args = [prompt];
+      if (options.stream) args.push("--stream");
+
+      const { ok, data, error } = await sendToWorker("ai", args, config);
+
+      if (!ok) {
+        console.log("✗ Error: Failed to get response from Claude");
+        console.log(`  ${error || data?.error}`);
+        process.exit(1);
+      }
+
+      const { response, tokens, model } = data.data;
+      console.log("");
+      console.log(response);
+      console.log("");
+      console.log(`✓ Model: ${model}`);
+      console.log(
+        `  Tokens: ${tokens.input} input + ${tokens.output} output = ${tokens.total} total`,
+      );
+    } catch (error) {
+      console.log("✗ Error: Unexpected error");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// Fix command
+program
+  .command("fix <file>")
+  .description("Fix code issues in a file")
+  .option(
+    "--apply",
+    "Ask the AI for a unified diff and apply it with `git apply` (backs up the file to <file>.bak first)",
+  )
+  .action(async (file, options) => {
+    try {
+      const config = await loadConfig();
+      if (!config.nemotron_api_key) {
+        console.log("✗ Error: NVIDIA_API_KEY not found in config");
+        console.log("  Run: warnetech init");
+        process.exit(1);
+      }
+
+      console.log(`✓ Analyzing ${file}...`);
+
+      let content;
+      try {
+        content = await fs.readFile(file, "utf-8");
+      } catch (error) {
+        console.log(`✗ Error: Could not read ${file}`);
+        console.log(`  ${error.message}`);
+        process.exit(1);
+      }
+
+      // System prompt per docs/07_AI_INTEGRATION.md's `warnetech fix` spec.
+      const prompt = [
+        `Analyze the following file (${file}) and:`,
+        "1. Identify any bugs, issues, or potential problems",
+        "2. Suggest specific fixes with code examples",
+        "3. Explain why each fix is needed",
+        "4. Rate severity: critical | high | medium | low",
+        "",
+        "Focus on: security vulnerabilities, performance issues, code quality, best practices.",
+        "",
+        `--- ${file} ---`,
+        content,
+      ].join("\n");
+
+      const { ok, data, error } = await sendToWorker("ai", [prompt], config);
+      if (!ok) {
+        console.log("✗ Error: Failed to analyze file");
+        console.log(`  ${error || data?.error}`);
+        process.exit(1);
+      }
+
+      console.log("");
+      console.log(data.data.response);
+      console.log("");
+
+      if (!options.apply) {
+        console.log(
+          `Run "warnetech fix ${file} --apply" to have the AI generate a patch and apply it (a .bak backup is made first).`,
+        );
+        return;
+      }
+
+      console.log("> Requesting a patch to apply...");
+      const diffPrompt = `${prompt}\n\nRespond with ONLY a valid unified diff (git diff format, paths relative to the current directory) that applies your fix. No prose, no markdown code fences.`;
+      const diffResult = await sendToWorker("ai", [diffPrompt], config);
+      if (!diffResult.ok) {
+        console.log("✗ Error: Could not generate a patch to apply");
+        console.log(`  ${diffResult.error || diffResult.data?.error}`);
+        process.exit(1);
+      }
+
+      // A trailing newline is required for `git apply` to accept a hunk
+      // ending mid-file (its absence reads as "corrupt patch") — trim
+      // stray whitespace from the model's response, then add exactly one
+      // back.
+      const patch = `${diffResult.data.data.response.trim()}\n`;
+      const backupPath = `${file}.bak`;
+      await fs.copyFile(file, backupPath);
+      console.log(`✓ Backed up original to ${backupPath}`);
+
+      const tmpPatchPath = path.join(
+        os.tmpdir(),
+        `warnetech-fix-${Date.now()}.patch`,
+      );
+      await fs.writeFile(tmpPatchPath, patch, "utf-8");
+
+      try {
+        await execAsync(`git apply "${tmpPatchPath}"`);
+        console.log(`✓ Applied fix to ${file}`);
+        console.log(`  Backup kept at: ${backupPath}`);
+      } catch (applyError) {
+        console.log("✗ Error: Failed to apply patch automatically");
+        // execAsync's rejection carries git's actual error on stderr; the
+        // top-level .message is just "Command failed: git apply ...".
+        console.log(`  ${(applyError.stderr || applyError.message).trim().split("\n").pop()}`);
+        console.log(`  Patch saved at: ${tmpPatchPath}`);
+        console.log(`  Original is untouched; backup also at: ${backupPath}`);
+        process.exit(1);
+      }
+    } catch (error) {
+      console.log("✗ Error: Unexpected error");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// Explain command
+program
+  .command("explain <file>")
+  .description("Explain code in a file")
+  .action(async (file) => {
+    try {
+      const config = await loadConfig();
+      if (!config.nemotron_api_key) {
+        console.log("✗ Error: NVIDIA_API_KEY not found in config");
+        console.log("  Run: warnetech init");
+        process.exit(1);
+      }
+
+      console.log(`✓ Explaining ${file}...`);
+
+      let content;
+      try {
+        content = await fs.readFile(file, "utf-8");
+      } catch (error) {
+        console.log(`✗ Error: Could not read ${file}`);
+        console.log(`  ${error.message}`);
+        process.exit(1);
+      }
+
+      // System prompt per docs/07_AI_INTEGRATION.md's `warnetech explain` spec.
+      const prompt = [
+        `Explain the following file (${file}) in detail:`,
+        "1. Purpose and high-level overview",
+        "2. Key functions and their roles",
+        "3. Data flow and control flow",
+        "4. Dependencies and integrations",
+        "5. Security considerations if applicable",
+        "",
+        "Use clear language suitable for someone learning to code. Break down complex concepts.",
+        "",
+        `--- ${file} ---`,
+        content,
+      ].join("\n");
+
+      const { ok, data, error } = await sendToWorker("ai", [prompt], config);
+      if (!ok) {
+        console.log("✗ Error: Failed to explain file");
+        console.log(`  ${error || data?.error}`);
+        process.exit(1);
+      }
+
+      console.log("");
+      console.log(data.data.response);
+    } catch (error) {
+      console.log("✗ Error: Unexpected error");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// GitHub commands
+program
+  .command("gh-open <repo>")
+  .description("Open GitHub repository in Claude")
+  .action(async (repo) => {
+    try {
+      const config = await loadConfig();
+      console.log(`> Opening ${repo}...`);
+
+      const { ok, data, error, status } = await sendToWorker(
+        "gh",
+        ["open", repo],
+        config,
+      );
+
+      if (!ok) {
+        console.log("✗ Error: Failed to generate Claude URL");
+        console.log(`  Reason: ${error || data?.error}`);
+        process.exit(1);
+      }
+
+      const { url, claude_url } = data.data;
+      console.log(`✓ Repository: ${repo}`);
+      console.log(`✓ URL: ${url}`);
+      console.log(`✓ Claude: ${claude_url}`);
+      console.log("");
+      console.log("Copy link to open in Claude:");
+      console.log(claude_url);
+    } catch (error) {
+      console.log("✗ Error: Unexpected error");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("gh-push <message>")
+  .description("Commit and push changes to GitHub")
+  .option("--no-verify", "Skip pre-commit hooks")
+  .action(async (message, options) => {
+    try {
+      console.log("> Checking changes...");
+      const { stdout: status } = await execAsync("git status --porcelain");
+
+      if (!status.trim()) {
+        console.log("✗ Error: No changes to commit");
+        console.log("  Check: git status");
+        console.log("  Add: git add .");
+        process.exit(1);
+      }
+
+      console.log("✓ Changes found");
+      console.log("> Staging files...");
+      await execAsync("git add .");
+
+      console.log("> Committing...");
+      const commitCmd = `git commit -m "${message.replace(/"/g, '\\"')}"${options.verify ? "" : " --no-verify"}`;
+      await execAsync(commitCmd);
+
+      console.log("> Pushing...");
+      await execAsync("git push -u origin HEAD");
+
+      console.log("✓ Success: Pushed to origin");
+      const { stdout: branch } = await execAsync(
+        "git rev-parse --abbrev-ref HEAD",
+      );
+      console.log(`  Branch: ${branch.trim()}`);
+    } catch (error) {
+      if (error.message.includes("nothing to commit")) {
+        console.log("✗ Error: No changes to commit");
+      } else if (error.message.includes("conflict")) {
+        console.log("✗ Error: Merge conflict detected");
+        console.log("  Resolve conflicts and try again");
+      } else if (error.message.includes("rejected")) {
+        console.log("✗ Error: Push rejected (non-fast-forward)");
+        console.log("  Run: git pull --rebase");
+      } else {
+        console.log("✗ Error: Git operation failed");
+      }
+      console.log(`  ${error.message.split("\n")[0]}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("gh-pull")
+  .description("Pull latest changes from GitHub")
+  .option("--rebase", "Use rebase instead of merge")
+  .action(async (options) => {
+    try {
+      console.log("> Fetching latest...");
+      await execAsync("git fetch origin");
+
+      console.log("> Pulling...");
+      const pullCmd = options.rebase ? "git pull --rebase" : "git pull";
+      const { stdout } = await execAsync(pullCmd);
+
+      console.log("✓ Success: Updated from origin");
+      const lines = stdout.split("\n");
+      for (const line of lines) {
+        if (
+          line.includes("file") ||
+          line.includes("changed") ||
+          line.includes("insertion") ||
+          line.includes("deletion")
+        ) {
+          console.log(`  ${line}`);
+        }
+      }
+    } catch (error) {
+      if (error.message.includes("conflict")) {
+        console.log("✗ Error: Merge conflict detected");
+        console.log("  Resolve conflicts and run: git add . && git commit");
+      } else if (error.message.includes("CONFLICT")) {
+        console.log("✗ Error: Merge conflict - resolve manually");
+      } else {
+        console.log("✗ Error: Git pull failed");
+      }
+      console.log(`  ${error.message.split("\n")[0]}`);
+      process.exit(1);
+    }
+  });
+
+// System commands
+program
+  .command("status")
+  .description("Show system status")
+  .action(async () => {
+    const config = await loadConfig();
+    const configPath = path.join(os.homedir(), ".claude-cli", "config.json");
+
+    console.log(`CLI Version: ${pkg.version}`);
+    console.log(`Config: ${configPath}`);
+
+    const ping = await sendToWorker("ping", [], config);
+    if (!ping.ok) {
+      console.log(`Worker: ✗ Unreachable (${config.worker_url})`);
+      console.log(`  ${ping.error || ping.data?.error}`);
+      return;
+    }
+    console.log(`Worker: ✓ Connected (${config.worker_url})`);
+
+    const sys = await sendToWorker("sys", ["status"], config);
+    if (sys.ok) {
+      const { status, version, uptime, services } = sys.data.data;
+      console.log(`Server Status: ${status} (v${version}, uptime ${uptime}s)`);
+      console.log("Services:");
+      for (const [name, state] of Object.entries(services)) {
+        console.log(`  - ${name}: ${state}`);
+      }
+    }
+
+    const quota = await sendToWorker("sys", ["quota", "check"], config);
+    if (quota.ok) {
+      const { api_calls, storage, rate_limit, live, note } = quota.data.data;
+      console.log(`Quotas${live ? "" : " (example data)"}:`);
+      if (api_calls) {
+        console.log(`  - API Calls: ${api_calls.used}/${api_calls.limit}`);
+      }
+      if (storage && storage.used !== undefined) {
+        console.log(`  - Storage: ${storage.used}GB/${storage.limit}GB`);
+      }
+      if (rate_limit && rate_limit.used !== undefined) {
+        console.log(`  - Rate Limit: ${rate_limit.used}/${rate_limit.limit} per minute`);
+      }
+      if (note) {
+        console.log(`  note: ${note}`);
+      }
+    }
+  });
+
+program
+  .command("sync")
+  .description("Sync with remote (quotas, baselines)")
+  .action(async () => {
+    try {
+      const config = await loadConfig();
+      console.log("> Syncing...");
+      const { ok, data, error } = await sendToWorker("sys", ["sync"], config);
+
+      if (!ok) {
+        console.log("✗ Error: Sync failed");
+        console.log(`  ${error || data?.error}`);
+        process.exit(1);
+      }
+
+      const { synced, baselines_updated, signatures_updated, reason } =
+        data.data;
+      if (synced) {
+        console.log("✓ Synced");
+        console.log(`  Baselines updated: ${baselines_updated}`);
+        console.log(`  Signatures updated: ${signatures_updated}`);
+      } else {
+        console.log("✗ Not synced");
+        console.log(`  Reason: ${reason}`);
+      }
+    } catch (error) {
+      console.log("✗ Error: Unexpected error");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("update")
+  .description("Update CLI to latest version")
+  .option("--check", "Only check for updates")
+  .action(async (options) => {
+    // There's no signed GitHub-releases / R2-backup pipeline in this repo
+    // (see docs/05_CLI_COMMANDS.md's aspirational version of this command),
+    // so "update" here means what CLAUDE.md's own git workflow already
+    // relies on: fetch + fast-forward pull of the current branch.
+    try {
+      console.log(options.check ? "✓ Checking for updates..." : "✓ Updating CLI...");
+
+      await execAsync("git fetch origin");
+      const { stdout: branchOut } = await execAsync(
+        "git rev-parse --abbrev-ref HEAD",
+      );
+      const branch = branchOut.trim();
+      const { stdout: localOut } = await execAsync("git rev-parse HEAD");
+      const { stdout: remoteOut } = await execAsync(
+        `git rev-parse origin/${branch}`,
+      );
+      const local = localOut.trim();
+      const remote = remoteOut.trim();
+
+      if (local === remote) {
+        console.log(`✓ Already up to date (${branch} @ ${local.slice(0, 7)})`);
+        return;
+      }
+
+      const { stdout: countOut } = await execAsync(
+        `git rev-list --count ${local}..${remote}`,
+      );
+      console.log(
+        `✓ Update available: ${countOut.trim()} commit(s) behind origin/${branch}`,
+      );
+
+      if (options.check) {
+        console.log("  Run without --check to pull the latest changes");
+        return;
+      }
+
+      console.log("> Pulling...");
+      await execAsync("git pull --ff-only");
+      const newPkg = JSON.parse(
+        await fs.readFile(path.join(__dirname, "../package.json"), "utf-8"),
+      );
+      console.log(`✓ Updated to ${newPkg.version} (${remote.slice(0, 7)})`);
+    } catch (error) {
+      console.log("✗ Error: Update failed");
+      console.log(`  ${error.message.split("\n")[0]}`);
+      console.log(
+        "  This checks/pulls the current git branch — make sure the working tree is clean and origin is reachable.",
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("evolve")
+  .description("Self-update with AI synthesis & verification")
+  .option("--dry-run", "Simulate update without deploying")
+  .option("--check", "Only check for updates")
+  .action(async (options) => {
+    // docs/09_AUTOMATION_PLAN.md describes a full sandbox-synthesis /
+    // atomic-deploy / rollback pipeline (D1 patch queue, staging Worker
+    // deploys, an AST mutation engine). None of that infrastructure
+    // exists in this repo, and a CLI that unattendedly rewrites and
+    // redeploys its own code is a real safety hazard — not something to
+    // fake with console.log lines. This implements the one safe, real
+    // slice of it: ask the AI for improvement suggestions grounded in
+    // this repo's own outstanding TODOs, and leave review/apply/deploy
+    // to a human (e.g. via `warnetech fix <file> --apply`).
+    try {
+      console.log("🔄 Starting evolution (synthesis-only; see comments in this file)...");
+      const config = await loadConfig();
+
+      let todoOutput = "";
+      try {
+        const { stdout } = await execAsync(
+          'grep -rn "TODO" --include=*.js --include=*.py . 2>/dev/null | grep -v node_modules | head -40',
+        );
+        todoOutput = stdout;
+      } catch (_error) {
+        // grep exits non-zero when there are no matches — that's fine, not a failure.
+        todoOutput = "";
+      }
+
+      if (options.check) {
+        const todoCount = todoOutput.trim()
+          ? todoOutput.trim().split("\n").length
+          : 0;
+        console.log(`✓ Found ${todoCount} outstanding TODO(s) in the working tree`);
+        console.log("  Run without --check to get AI suggestions for them");
+        return;
+      }
+
+      if (!config.nemotron_api_key) {
+        console.log("✗ Error: NVIDIA_API_KEY not found in config");
+        console.log("  Run: warnetech init");
+        process.exit(1);
+      }
+
+      const prompt = [
+        "Here are outstanding TODO comments from a codebase:",
+        "",
+        todoOutput || "(none found)",
+        "",
+        "Suggest concrete, minimal next steps to resolve the 3 most impactful ones.",
+        "Do not invent files or APIs that aren't shown above.",
+      ].join("\n");
+
+      console.log("🔨 Synthesizing suggestions from AI...");
+      const { ok, data, error } = await sendToWorker("ai", [prompt], config);
+      if (!ok) {
+        console.log("✗ Error: Could not get suggestions");
+        console.log(`  ${error || data?.error}`);
+        process.exit(1);
+      }
+
+      console.log("");
+      console.log(data.data.response);
+      console.log("");
+
+      if (options.dryRun) {
+        console.log("✓ Dry run complete — no files written, nothing deployed.");
+        return;
+      }
+
+      console.log("✓ Suggestions generated. Stopping here on purpose:");
+      console.log("  automated verification/deployment/rollback isn't implemented");
+      console.log('  (see the comment above "warnetech evolve" for why) —');
+      console.log("  review the suggestions and apply them by hand, e.g.:");
+      console.log('  warnetech fix "<file>" --apply');
+    } catch (error) {
+      console.log("✗ Error: Unexpected error");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+// Help command
+program
+  .command("help [command]")
+  .description("Get help for commands")
+  .option("--error <message>", "Get help with an error")
+  .action(async (cmd, options) => {
+    if (options.error) {
+      try {
+        const config = await loadConfig();
+        if (!config.nemotron_api_key) {
+          console.log("✗ Error: NVIDIA_API_KEY not found in config");
+          console.log("  Run: warnetech init");
+          process.exit(1);
+        }
+
+        console.log(`✓ Getting help for error: ${options.error}`);
+
+        // System prompt per docs/07_AI_INTEGRATION.md's `help --error` spec.
+        const prompt = [
+          "A user encountered an error in the Warnetech CLI system:",
+          `"${options.error}"`,
+          "",
+          "Provide:",
+          "1. Explanation of what went wrong",
+          "2. Likely causes",
+          "3. Step-by-step troubleshooting",
+          "4. Suggested commands to resolve",
+          "5. Prevention tips for the future",
+        ].join("\n");
+
+        const { ok, data, error } = await sendToWorker("ai", [prompt], config);
+        if (!ok) {
+          console.log("✗ Error: Could not get AI explanation");
+          console.log(`  ${error || data?.error}`);
+          process.exit(1);
+        }
+
+        console.log("");
+        console.log(data.data.response);
+      } catch (error) {
+        console.log("✗ Error: Unexpected error");
+        console.log(`  ${error.message}`);
+        process.exit(1);
+      }
+    } else if (cmd) {
+      console.log(`Help for: ${cmd}`);
+      program.command(cmd).help();
+    } else {
+      program.help();
+    }
+  });
+
+// Initialization command
+program
+  .command("init")
+  .description("Initialize configuration")
+  .option("--force", "Overwrite an existing config file")
+  .action(async (options) => {
+    const configDir = path.join(os.homedir(), ".claude-cli");
+    const configPath = path.join(configDir, "config.json");
+
+    try {
+      await fs.access(configPath);
+      if (!options.force) {
+        console.log(`✗ Config already exists: ${configPath}`);
+        console.log("  Run: warnetech init --force to overwrite");
+        process.exit(1);
+      }
+    } catch (_error) {
+      // Doesn't exist yet — nothing to do, fall through to create it.
+    }
+
+    console.log("✓ Initializing configuration...");
+
+    try {
+      await fs.mkdir(configDir, { recursive: true });
+
+      // Defaults per docs/05_CLI_COMMANDS.md's `warnetech init` spec.
+      const defaultConfig = {
+        api_key: "your-key-here",
+        worker_url: "https://your-worker.workers.dev",
+        nemotron_api_key: "your-nemotron-key",
+        github_token: "your-github-token",
+        tier: 2,
+        cache_dir: path.join(configDir, "cache"),
+      };
+
+      // 0o600: this file holds secrets (api_key, tokens) — keep it
+      // readable only by the owner, per CLAUDE.md's "never log/leak
+      // plaintext secrets" principle. `mode` on writeFile only takes
+      // effect when the file is newly created (POSIX open() semantics),
+      // so with --force overwriting a pre-existing (possibly
+      // loosely-permissioned) file we chmod explicitly afterwards too.
+      await fs.writeFile(
+        configPath,
+        `${JSON.stringify(defaultConfig, null, 2)}\n`,
+        { mode: 0o600 },
+      );
+      await fs.chmod(configPath, 0o600);
+
+      console.log(`Created: ${configPath}`);
+      console.log("  Edit it to set your real api_key, worker_url, and nemotron_api_key.");
+    } catch (error) {
+      console.log("✗ Error: Could not create config");
+      console.log(`  ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+program.parse();
