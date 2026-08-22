@@ -1,0 +1,147 @@
+"""llmforge -- wiring LLMs into real codebases.
+
+Six primitives that every serious integration ends up needing, plus a lab of
+techniques that are promising but not yet proven:
+
+    provider   the vendor seam (real, fake, record/replay, retrying)
+    trace      spans and a cost ledger
+    tools      typed tools, generated schemas, gated dispatch
+    loop       a bounded agent loop that handles the awkward stop reasons
+    context    walk -> rank -> pack a repository into a token budget
+    guard      untrusted-content envelopes, secret redaction, output validation
+    evals      a variance-aware suite you can gate CI on
+    assurance  four coding principles compiled into gates that can fail
+    audit      tamper-evident trail, deny-by-default authority, dual control
+    labs       frontier techniques, each with a falsifiable claim
+
+Nothing here requires the Anthropic SDK to import. Everything can be exercised
+against ``FakeProvider`` with no network.
+"""
+
+from __future__ import annotations
+
+__version__ = "0.1.0"
+
+from .assurance import (
+    AssumptionLedger,
+    AssuranceError,
+    Postflight,
+    Preflight,
+    SuccessCriteria,
+    Verdict,
+    Violation,
+    complexity_budget,
+    diff_discipline,
+    gate_agent,
+)
+from .audit import AuditLog, DualControl, SafePolicy, audited
+from .context import Chunk, Packed, build_context, pack, rank, repo_map, walk_repo
+from .evals import (
+    Case,
+    Grade,
+    Suite,
+    SuiteResult,
+    all_of,
+    any_of,
+    contains,
+    excludes,
+    json_valid,
+    llm_judge,
+    matches,
+    sweep,
+    under_tokens,
+)
+from .guard import (
+    ValidationError,
+    redact,
+    repair_prompt,
+    scan_injection,
+    validate_json,
+    wrap_untrusted,
+)
+from .loop import Agent, Budget, BudgetExceeded, RunResult, Step
+from .provider import (
+    AnthropicProvider,
+    FakeProvider,
+    Provider,
+    RecordingProvider,
+    default_provider,
+    text_response,
+    tool_response,
+    with_retry,
+)
+from .tools import Decision, GatedPolicy, Tool, ToolPolicy, ToolRegistry, tool
+from .trace import TracedProvider, Tracer, cost_usd
+from .types import ProviderError, Request, Response, ToolCall, ToolResult, Usage
+
+__all__ = [
+    "Agent",
+    "all_of",
+    "AnthropicProvider",
+    "any_of",
+    "AssumptionLedger",
+    "AssuranceError",
+    "audited",
+    "AuditLog",
+    "Budget",
+    "BudgetExceeded",
+    "build_context",
+    "Case",
+    "Chunk",
+    "complexity_budget",
+    "contains",
+    "cost_usd",
+    "Decision",
+    "default_provider",
+    "diff_discipline",
+    "DualControl",
+    "excludes",
+    "FakeProvider",
+    "gate_agent",
+    "GatedPolicy",
+    "Grade",
+    "json_valid",
+    "llm_judge",
+    "matches",
+    "pack",
+    "Packed",
+    "Postflight",
+    "Preflight",
+    "Provider",
+    "ProviderError",
+    "rank",
+    "RecordingProvider",
+    "redact",
+    "repair_prompt",
+    "repo_map",
+    "Request",
+    "Response",
+    "RunResult",
+    "SafePolicy",
+    "scan_injection",
+    "Step",
+    "SuccessCriteria",
+    "Suite",
+    "SuiteResult",
+    "sweep",
+    "text_response",
+    "Tool",
+    "tool",
+    "tool_response",
+    "ToolCall",
+    "ToolPolicy",
+    "ToolRegistry",
+    "ToolResult",
+    "TracedProvider",
+    "Tracer",
+    "under_tokens",
+    "Usage",
+    "validate_json",
+    "ValidationError",
+    "Verdict",
+    "Violation",
+    "walk_repo",
+    "with_retry",
+    "wrap_untrusted",
+    "__version__",
+]

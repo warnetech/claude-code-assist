@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    defaults:
+      run:
+        working-directory: packages/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src tests
+      - name: Test
+        run: pytest tests -q
+      - name: Doctests
+        # The docstrings make claims; the doctests keep them true.
+        run: pytest --doctest-modules src/llmforge -q
+
+  typescript:
+    name: typescript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  examples:
+    name: examples run offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # No credentials are set. Everything here must run against FakeProvider,
+      # which is the property that keeps the examples honest.
+      - run: python examples/01_assured_change.py
+      - run: python examples/02_gate_catches_a_drive_by.py
+
+  assurance:
+    name: assurance gates on this PR
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run the gates we ship against our own diff
+        # Advisory: request terms are not knowable from CI, so scope checks
+        # would be noise. Reported, never blocking. `/assure` is the real gate,
+        # run by a human who knows what was asked for.
+        continue-on-error: true
+        run: |
+          cd packages/python
+          PYTHONPATH=src python3 - <<'PY'
+          import subprocess
+          from llmforge.assurance import complexity_budget, diff_discipline
+
+          base = subprocess.run(
+              ["git", "merge-base", "HEAD", "origin/${{ github.base_ref }}"],
+              capture_output=True, text=True, cwd="../..").stdout.strip()
+          diff = subprocess.run(["git", "diff", base, "HEAD"],
+                                capture_output=True, text=True, cwd="../..").stdout
+          added = "\n".join(l[1:] for l in diff.splitlines()
+                            if l.startswith("+") and not l.startswith("+++"))
+          verdict = diff_discipline(diff) + complexity_budget(added)
+          print(verdict.report())
+          PY
