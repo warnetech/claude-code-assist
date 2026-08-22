@@ -33,6 +33,12 @@ export interface Violation {
   principle: string;
   severity: Severity;
   message: string;
+  /**
+   * The stable, machine-readable identity of the finding. Prose messages get
+   * reworded; codes do not, which is what lets `fixtures/assurance-parity.json`
+   * pin the Python and TypeScript gates to the same behaviour.
+   */
+  code: string;
   location?: string;
   remedy?: string;
 }
@@ -138,6 +144,7 @@ export class AssumptionLedger {
         principle: "Think Before Coding",
         severity: "blocker",
         message: "no assumptions declared for a non-trivial task",
+        code: "think.no-assumptions",
         remedy:
           "state what you inferred that the request did not say, or mark the task trivial if it genuinely is",
       });
@@ -148,6 +155,7 @@ export class AssumptionLedger {
           principle: "Think Before Coding",
           severity: "warn",
           message: `assumption has no evidence: ${JSON.stringify(claim)}`,
+        code: "think.unsupported-assumption",
           remedy: "cite what in the codebase or request supports it, or move it to open questions",
         });
       }
@@ -157,6 +165,7 @@ export class AssumptionLedger {
         principle: "Think Before Coding",
         severity: "blocker",
         message: `${this.openQuestions.length} unanswered question(s): ${this.openQuestions.slice(0, 3).join("; ")}`,
+        code: "think.open-questions",
         remedy: "answer them, or proceed explicitly under a stated assumption",
       });
     }
@@ -188,25 +197,43 @@ export class AssumptionLedger {
 // 2. Simplicity First
 // --------------------------------------------------------------------------- //
 
+// Shapes that appear when a model builds for imagined future requirements.
+//
+// Every pattern here matches BOTH Python and TypeScript/JavaScript syntax. A
+// TypeScript harness routinely reviews Python diffs and vice versa; a gate that
+// only recognises its own host language silently passes everything else, which
+// is worse than not running -- it reports "clean" on code it never understood.
+//
+// Kept in lockstep with SPECULATIVE_PATTERNS in the Python package. The parity
+// fixtures fail if the two drift.
 const SPECULATIVE_PATTERNS: [string, RegExp, string][] = [
+  [
+    "unused-config-knob",
+    /^\s*(?:self\.|this\.)?(?:const\s+|let\s+|var\s+)?\w*(?:config|option|flag|mode|strategy|backend)\w*\s*[:=]/im,
+    "a configuration point added without a second caller is speculative flexibility; inline the one behaviour you need",
+  ],
   [
     "abstract-base",
     /^\s*(?:export\s+)?(?:abstract\s+)?class\s+\w*(?:Base|Abstract|Generic)\w*/m,
     "an abstraction introduced for a single implementation; write the concrete version and extract later if a second one arrives",
   ],
   [
+    // Case-insensitive: `HandlerFactory` and `make_handler_factory` are the
+    // same smell. `Provider` is deliberately absent -- it is legitimate domain
+    // vocabulary often enough that flagging it trains people to ignore this
+    // whole category.
     "factory",
-    /^\s*(?:export\s+)?(?:function|class|const)\s+\w*(?:Factory|Builder|Manager)\w*/im,
+    /^\s*(?:export\s+)?(?:async\s+)?(?:def|class|function|const|let)\s+\w*(?:Factory|Builder|Manager)\w*/im,
     "an indirection layer; if there is exactly one thing being built, construct it directly",
   ],
   [
     "swallowed-error",
-    /catch\s*(?:\([^)]*\))?\s*\{\s*\}/m,
+    /except\s+\w*(?:Exception|Error)?\s*(?:as\s+\w+\s*)?:\s*\n\s*pass|catch\s*(?:\([^)]*\))?\s*\{\s*\}/m,
     "error handling for a scenario that is either impossible (delete it) or possible (handle it properly)",
   ],
   [
     "todo-scaffold",
-    /\/\/\s*(?:TODO|FIXME|for future use|not implemented yet)/i,
+    /(?:#|\/\/)\s*(?:TODO|FIXME|for future use|not implemented yet)/i,
     "scaffolding for work that was not requested",
   ],
 ];
@@ -232,9 +259,12 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
   const { maxLines, maxDefinitions, maxNesting = 4, baselineLines, ratio = 4 } = options;
   const violations: Violation[] = [];
 
+  // Both comment styles, in both languages. Counting `#` as code in TypeScript
+  // (or `//` in Python) makes the same file measure differently depending on
+  // which implementation ran -- pinned by fixtures/assurance-parity.json.
   const lines = code
     .split("\n")
-    .filter((l) => l.trim() && !l.trim().startsWith("//"));
+    .filter((l) => l.trim() && !l.trim().startsWith("//") && !l.trim().startsWith("#"));
   const added = lines.length;
 
   if (maxLines !== undefined && added > maxLines) {
@@ -242,6 +272,7 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
       principle: "Simplicity First",
       severity: "blocker",
       message: `${added} lines exceeds the declared budget of ${maxLines}`,
+        code: "simplicity.line-budget",
       remedy:
         "cut to the minimum that solves the stated problem, or raise the budget deliberately and say why",
     });
@@ -252,6 +283,7 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
       principle: "Simplicity First",
       severity: "blocker",
       message: `${added} lines replaces ${baselineLines} (${(added / baselineLines).toFixed(1)}x growth)`,
+        code: "simplicity.growth-ratio",
       remedy:
         "a rewrite this much larger is usually solving problems nobody asked about; identify what is not required",
     });
@@ -264,6 +296,7 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
       principle: "Simplicity First",
       severity: "warn",
       message: `${definitions} definitions exceeds ${maxDefinitions}`,
+        code: "simplicity.definition-count",
       remedy: "collapse single-use helpers into their caller",
     });
   }
@@ -274,6 +307,7 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
       principle: "Simplicity First",
       severity: "warn",
       message: `nesting depth ${nesting} exceeds ${maxNesting}`,
+        code: "simplicity.nesting-depth",
       remedy: "invert conditions and return early",
     });
   }
@@ -285,6 +319,7 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
         principle: "Simplicity First",
         severity: "note",
         message: `possible speculative generality (${name}): ${JSON.stringify(match[0].trim().slice(0, 60))}`,
+        code: "simplicity.speculative",
         remedy,
       });
     }
@@ -293,15 +328,24 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
   return new Verdict(violations, ["simplicity-first"]);
 }
 
-function maxIndentDepth(code: string, tabWidth = 2): number {
-  let depth = 0;
+/**
+ * Nesting depth, with the indent unit inferred rather than assumed.
+ *
+ * Hardcoding a width makes the same file measure differently depending on which
+ * language wrote the gate -- 2 in TypeScript, 4 in Python -- so identical code
+ * gets two different verdicts. Taking the smallest non-zero indent actually
+ * present removes that dependency.
+ */
+function maxIndentDepth(code: string, tabWidth = 4): number {
+  const indents: number[] = [];
   for (const line of code.split("\n")) {
     if (!line.trim()) continue;
     const leading = line.length - line.trimStart().length;
-    const spaces = line.slice(0, leading).replace(/\t/g, " ".repeat(tabWidth)).length;
-    depth = Math.max(depth, Math.floor(spaces / tabWidth));
+    const width = line.slice(0, leading).replace(/\t/g, " ".repeat(tabWidth)).length;
+    if (width > 0) indents.push(width);
   }
-  return depth;
+  const unit = indents.length ? Math.min(...indents) : tabWidth;
+  return indents.length ? Math.max(...indents.map((w) => Math.floor(w / unit))) : 0;
 }
 
 // --------------------------------------------------------------------------- //
@@ -387,6 +431,7 @@ export function diffDiscipline(diff: string, options: DiffOptions = {}): Verdict
         principle: "Surgical Changes",
         severity: "blocker",
         message: `edit outside the declared scope: ${path}`,
+        code: "surgical.out-of-scope",
         location: path,
         remedy: `the request authorized ${JSON.stringify(allowedPaths)}; raise the scope explicitly or revert this file`,
       });
@@ -395,6 +440,7 @@ export function diffDiscipline(diff: string, options: DiffOptions = {}): Verdict
         principle: "Surgical Changes",
         severity: "warn",
         message: `${path} does not obviously relate to the request`,
+        code: "surgical.unrelated-file",
         location: path,
         remedy: "state which part of the request required this file, or drop it from the change",
       });
@@ -407,6 +453,7 @@ export function diffDiscipline(diff: string, options: DiffOptions = {}): Verdict
         principle: "Surgical Changes",
         severity: "warn",
         message: "hunk is pure reformatting",
+        code: "surgical.pure-formatting",
         location: `${hunk.file} ${hunk.header.trim()}`,
         remedy: "revert it; formatting churn costs review attention and hides the real change",
       });
@@ -416,6 +463,7 @@ export function diffDiscipline(diff: string, options: DiffOptions = {}): Verdict
         principle: "Surgical Changes",
         severity: "blocker",
         message: `comment removed without replacement: ${JSON.stringify(comment.trim().slice(0, 70))}`,
+        code: "surgical.comment-deleted",
         location: hunk.file,
         remedy:
           "restore it, or say what you learned that makes it wrong; a comment is often the only record of why the code is like this",
@@ -482,6 +530,7 @@ export class SuccessCriteria {
         principle: "Goal-Driven Execution",
         severity: "blocker",
         message: "no success criteria defined",
+        code: "goal.no-criteria",
         remedy:
           "state what must be true when this is done, as something that can be checked -- e.g. 'test_x passes', not 'it works'",
       });
@@ -492,6 +541,7 @@ export class SuccessCriteria {
           principle: "Goal-Driven Execution",
           severity: "blocker",
           message: `criterion is not verifiable: ${JSON.stringify(criterion.description)}`,
+        code: "goal.vague-criterion",
           remedy:
             "restate it as an observable outcome: 'fix the bug' -> 'the test reproducing it passes'",
         });
@@ -501,6 +551,7 @@ export class SuccessCriteria {
           principle: "Goal-Driven Execution",
           severity: "warn",
           message: `criterion has no automated verifier: ${JSON.stringify(criterion.description)}`,
+        code: "goal.no-verifier",
           remedy:
             "attach a callable so the loop can decide for itself; without one a human must adjudicate every iteration",
         });
@@ -529,6 +580,7 @@ export class SuccessCriteria {
           principle: "Goal-Driven Execution",
           severity: "blocker",
           message: `unmet: ${criterion.description}`,
+        code: "goal.unmet",
           remedy: detail,
         });
       }
@@ -578,6 +630,7 @@ export function preflight(
           principle: "Assurance",
           severity: "blocker",
           message: "preflight ran with neither an assumption ledger nor success criteria",
+        code: "assurance.no-preflight-input",
           remedy:
             "an unbounded task with no stated goal cannot be verified; supply at least one",
         },

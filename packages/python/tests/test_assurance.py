@@ -108,7 +108,7 @@ def test_speculative_generality_is_flagged():
 
 def test_swallowed_exception_is_flagged():
     code = "try:\n    go()\nexcept Exception:\n    pass\n"
-    assert any("impossible-guard" in v.message for v in complexity_budget(code).violations)
+    assert any("swallowed-error" in v.message for v in complexity_budget(code).violations)
 
 
 def test_deep_nesting_warns():

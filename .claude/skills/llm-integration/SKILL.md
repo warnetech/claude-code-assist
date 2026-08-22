@@ -91,3 +91,26 @@ A lab entry needs four things or it does not belong: a falsifiable **claim**, a
 core without an eval showing it beats the obvious baseline on cost, quality, or
 both. A technique that sounds clever and measures neutral is a technique that
 costs latency for nothing.
+
+## Two implementations, one contract
+
+The assurance gates exist in Python and TypeScript. They are pinned to each
+other by `fixtures/assurance-parity.json`, which both test suites load.
+
+**Adding or changing a finding means editing the fixtures first, then both
+implementations.** Not doing so is how two implementations of one contract
+drift — and the drift is silent, because each language keeps passing its own
+tests. `docs/08-operations.md` records the six divergences the fixtures caught
+the day they were written.
+
+Assert on `Violation.code`, never on the message. Codes are the contract; prose
+gets reworded.
+
+## Operational defaults
+
+- Pace with `with_rate_limit` before reaching for `with_retry` — a retry loop
+  reacts to a 429 that already cost a round trip.
+- The canonical wrapper order is `TracedProvider(with_retry(with_rate_limit(
+  RecordingProvider(AnthropicProvider()))))`. Getting it backwards is silent.
+- `llmforge doctor` is the first thing to run when something is wrong. It never
+  raises; a missing credential is a finding.

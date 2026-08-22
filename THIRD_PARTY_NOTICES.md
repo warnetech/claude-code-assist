@@ -62,6 +62,28 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## claude-command-cli
+
+Source: <https://github.com/tewartech-node/claude-command-cli>
+Owner: tewartech-node (this repository's authors)
+
+Not vendored — no code was copied. Several operational patterns were adapted,
+with the reasoning recorded in `docs/08-operations.md` § Provenance:
+
+- the per-principal token-bucket rate limiter from its server middleware, moved
+  to the client side as `llmforge.limits`;
+- the diagnostics contract (every check returns `{"ok": bool}`, no check
+  raises, a missing credential is a finding) as `llmforge.doctor`;
+- the hot/warm/ghost retention tiers as `llmforge.retention`;
+- the interop-test discipline from `tests/security/test_envelope_interop.py`
+  as `fixtures/assurance-parity.json`.
+
+That last one is the load-bearing borrow. Its `warnetech_envelope` module
+records what a second, unpinned implementation of one contract cost: *"never add
+a second implementation; that is what broke the CLI/Worker channel."* The
+assurance gates here have exactly that shape, and the fixtures caught six real
+divergences on their first run.
+
 ## Anthropic SDKs
 
 `anthropic` (Python) and `@anthropic-ai/sdk` (TypeScript) are optional

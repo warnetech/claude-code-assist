@@ -52,11 +52,17 @@ Severity = Literal["blocker", "warn", "note"]
 
 @dataclass(slots=True)
 class Violation:
-    """One failed check, with enough detail to act on without re-deriving it."""
+    """One failed check, with enough detail to act on without re-deriving it.
+
+    ``code`` is the stable, machine-readable identity of the finding. Prose
+    messages get reworded; codes do not, which is what lets the parity
+    fixtures pin the Python and TypeScript gates to the same behaviour.
+    """
 
     principle: str
     severity: Severity
     message: str
+    code: str = ""
     location: str = ""
     remedy: str = ""
 
@@ -170,6 +176,7 @@ class AssumptionLedger:
                     "Think Before Coding",
                     "blocker",
                     "no assumptions declared for a non-trivial task",
+                    code="think.no-assumptions",
                     remedy="state what you inferred that the request did not say, "
                     "or mark the task trivial=True if it genuinely is",
                 )
@@ -182,6 +189,7 @@ class AssumptionLedger:
                         "Think Before Coding",
                         "warn",
                         f"assumption has no evidence: {claim!r}",
+                    code="think.unsupported-assumption",
                         remedy="cite what in the codebase or request supports it, "
                         "or move it to open_questions",
                     )
@@ -194,6 +202,7 @@ class AssumptionLedger:
                     "blocker",
                     f"{len(self.open_questions)} unanswered question(s): "
                     + "; ".join(self.open_questions[:3]),
+                    code="think.open-questions",
                     remedy="answer them, or proceed explicitly under a stated assumption",
                 )
             )
@@ -229,6 +238,7 @@ def scan_hedging(text: str) -> Verdict:
                     "Think Before Coding",
                     "note",
                     f"unexamined assumption phrased as fact: {match.group(0)!r}",
+                    code="think.hedging",
                     location=f"line {line_no}",
                     remedy="promote it to the assumption ledger, or verify it",
                 )
@@ -240,39 +250,59 @@ def scan_hedging(text: str) -> Verdict:
 # 2. Simplicity First
 # --------------------------------------------------------------------------- #
 
+# Shapes that appear when a model builds for imagined future requirements.
+#
+# Every pattern here matches BOTH Python and TypeScript/JavaScript syntax. A
+# Python harness routinely reviews TypeScript diffs and vice versa; a gate that
+# only recognises its own host language silently passes everything else, which
+# is worse than not running -- it reports "clean" on code it never understood.
 SPECULATIVE_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     (
         "unused-config-knob",
-        re.compile(r"^\s*(?:self\.)?(\w*(?:config|option|flag|mode|strategy|backend)\w*)\s*[:=]",
-                   re.M | re.I),
+        re.compile(
+            r"^\s*(?:self\.|this\.)?(?:const\s+|let\s+|var\s+)?"
+            r"\w*(?:config|option|flag|mode|strategy|backend)\w*\s*[:=]",
+            re.M | re.I,
+        ),
         "a configuration point added without a second caller is speculative "
         "flexibility; inline the one behaviour you need",
     ),
     (
         "abstract-base",
-        re.compile(r"^\s*class\s+\w*(?:Base|Abstract|Generic)\w*\s*[({:]", re.M),
+        re.compile(
+            r"^\s*(?:export\s+)?(?:abstract\s+)?class\s+\w*(?:Base|Abstract|Generic)\w*",
+            re.M,
+        ),
         "an abstraction introduced for a single implementation; write the "
         "concrete version and extract later if a second one arrives",
     ),
     (
-        "factory",
         # Case-insensitive: `HandlerFactory` and `make_handler_factory` are the
         # same smell. `Provider` is deliberately absent -- it is legitimate
         # domain vocabulary often enough that flagging it trains people to
         # ignore this whole category.
-        re.compile(r"^\s*(?:def|class)\s+\w*(?:Factory|Builder|Manager)\w*", re.M | re.I),
+        "factory",
+        re.compile(
+            r"^\s*(?:export\s+)?(?:async\s+)?(?:def|class|function|const|let)\s+"
+            r"\w*(?:Factory|Builder|Manager)\w*",
+            re.M | re.I,
+        ),
         "an indirection layer; if there is exactly one thing being built, "
         "construct it directly",
     ),
     (
-        "impossible-guard",
-        re.compile(r"except\s+Exception\s*:\s*\n\s*pass", re.M),
+        "swallowed-error",
+        re.compile(
+            r"except\s+\w*(?:Exception|Error)?\s*(?:as\s+\w+\s*)?:\s*\n\s*pass"
+            r"|catch\s*(?:\([^)]*\))?\s*\{\s*\}",
+            re.M,
+        ),
         "error handling for a scenario that is either impossible (delete it) "
         "or possible (handle it properly)",
     ),
     (
         "todo-scaffold",
-        re.compile(r"(?i)#\s*(?:TODO|FIXME|for future use|not implemented yet)", re.M),
+        re.compile(r"(?:#|//)\s*(?:TODO|FIXME|for future use|not implemented yet)", re.I),
         "scaffolding for work that was not requested",
     ),
 ]
@@ -314,7 +344,14 @@ def complexity_budget(
     False
     """
     verdict = Verdict(checked=["simplicity-first"])
-    lines = [ln for ln in code.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    # Both comment styles, in both languages. Counting `//` as code in Python
+    # (or `#` in TypeScript) makes the same file measure differently depending
+    # on which implementation ran -- pinned by fixtures/assurance-parity.json.
+    lines = [
+        ln
+        for ln in code.splitlines()
+        if ln.strip() and not ln.strip().startswith(("#", "//"))
+    ]
     added = len(lines)
 
     if max_lines is not None and added > max_lines:
@@ -323,6 +360,7 @@ def complexity_budget(
                 "Simplicity First",
                 "blocker",
                 f"{added} lines exceeds the declared budget of {max_lines}",
+                    code="simplicity.line-budget",
                 remedy="cut to the minimum that solves the stated problem, "
                 "or raise the budget deliberately and say why",
             )
@@ -335,6 +373,7 @@ def complexity_budget(
                 "blocker",
                 f"{added} lines replaces {baseline_lines} "
                 f"({added / baseline_lines:.1f}x growth)",
+                code="simplicity.growth-ratio",
                 remedy="a rewrite this much larger is usually solving problems "
                 "nobody asked about; identify what is not required",
             )
@@ -347,6 +386,7 @@ def complexity_budget(
                 "Simplicity First",
                 "warn",
                 f"{definitions} definitions exceeds {max_definitions}",
+                    code="simplicity.definition-count",
                 remedy="collapse single-use helpers into their caller",
             )
         )
@@ -358,6 +398,7 @@ def complexity_budget(
                 "Simplicity First",
                 "warn",
                 f"nesting depth {nesting} exceeds {max_nesting}",
+                    code="simplicity.nesting-depth",
                 remedy="invert conditions and return early",
             )
         )
@@ -369,6 +410,7 @@ def complexity_budget(
                     "Simplicity First",
                     "note",
                     f"possible speculative generality ({name}): {match.group(0).strip()[:60]!r}",
+                    code="simplicity.speculative",
                     location=f"line {code[: match.start()].count(chr(10)) + 1}",
                     remedy=remedy,
                 )
@@ -495,6 +537,7 @@ def diff_discipline(
                     "Surgical Changes",
                     "blocker",
                     f"edit outside the declared scope: {path}",
+                    code="surgical.out-of-scope",
                     location=path,
                     remedy=f"the request authorized {list(allowed_paths)}; "
                     "raise the scope explicitly or revert this file",
@@ -506,6 +549,7 @@ def diff_discipline(
                     "Surgical Changes",
                     "warn",
                     f"{path} does not obviously relate to the request",
+                    code="surgical.unrelated-file",
                     location=path,
                     remedy="state which part of the request required this file, "
                     "or drop it from the change",
@@ -519,6 +563,7 @@ def diff_discipline(
                     "Surgical Changes",
                     "warn",
                     "hunk is pure reformatting",
+                    code="surgical.pure-formatting",
                     location=f"{hunk.file} {hunk.header.strip()}",
                     remedy="revert it; formatting churn costs review attention "
                     "and hides the real change",
@@ -530,6 +575,7 @@ def diff_discipline(
                     "Surgical Changes",
                     "blocker",
                     f"comment removed without replacement: {comment.strip()[:70]!r}",
+                    code="surgical.comment-deleted",
                     location=hunk.file,
                     remedy="restore it, or say what you learned that makes it wrong; "
                     "a comment is often the only record of why the code is like this",
@@ -613,6 +659,7 @@ class SuccessCriteria:
                     "Goal-Driven Execution",
                     "blocker",
                     "no success criteria defined",
+                    code="goal.no-criteria",
                     remedy="state what must be true when this is done, as something "
                     "that can be checked -- e.g. 'test_x passes', not 'it works'",
                 )
@@ -624,6 +671,7 @@ class SuccessCriteria:
                         "Goal-Driven Execution",
                         "blocker",
                         f"criterion is not verifiable: {criterion.description!r}",
+                    code="goal.vague-criterion",
                         remedy="restate it as an observable outcome: "
                         "'fix the bug' -> 'the test reproducing it passes'",
                     )
@@ -634,6 +682,7 @@ class SuccessCriteria:
                         "Goal-Driven Execution",
                         "warn",
                         f"criterion has no automated verifier: {criterion.description!r}",
+                    code="goal.no-verifier",
                         remedy="attach a callable so the loop can decide for itself; "
                         "without one a human must adjudicate every iteration",
                     )
@@ -651,6 +700,7 @@ class SuccessCriteria:
                         "Goal-Driven Execution",
                         "blocker",
                         f"unmet: {criterion.description}",
+                    code="goal.unmet",
                         remedy=detail,
                     )
                 )
@@ -695,6 +745,7 @@ class Preflight:
                     "Assurance",
                     "blocker",
                     "preflight ran with neither an assumption ledger nor success criteria",
+                    code="assurance.no-preflight-input",
                     remedy="an unbounded task with no stated goal cannot be verified; "
                     "supply at least one",
                 )

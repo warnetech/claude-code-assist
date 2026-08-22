@@ -11,7 +11,8 @@ the Anthropic SDK is optional and lazily imported, so the entire library, its
 tests, and its examples run offline against a scripted provider.
 
 ```bash
-make install && make check     # 157 Python assertions, 93 TypeScript, all offline
+make install && make check     # 228 Python assertions, 123 TypeScript, all offline
+llmforge doctor                # self-test: reports rather than raises
 python examples/02_gate_catches_a_drive_by.py
 ```
 
@@ -57,6 +58,12 @@ This repository vendors them verbatim ([with attribution](THIRD_PARTY_NOTICES.md
 None of them call a model. They are static analysis over text you already
 have — fast, free, deterministic, and structurally incapable of hallucinating.
 Those are the properties you want in the component whose job is to say *no*.
+
+Both languages implement the same gates, and `fixtures/assurance-parity.json`
+pins them to identical behaviour — 30 cases asserted by both test suites, on
+machine-readable violation codes rather than prose. Two implementations of one
+contract drift; [`docs/08-operations.md`](docs/08-operations.md#the-parity-fixtures)
+records the six real divergences the fixtures caught on their first run.
 
 ```python
 from llmforge.assurance import AssumptionLedger, Preflight, SuccessCriteria
@@ -130,6 +137,9 @@ from the implementation.
 | `evals` | a variance-aware suite you can gate CI on |
 | `assurance` | four coding principles compiled into gates that can fail |
 | `audit` | hash-chained trail, deny-by-default authority, dual control |
+| `limits` | a token bucket in front of the provider |
+| `retention` | tiered pruning for traces and audit chains |
+| `doctor` | a self-test that reports rather than raises |
 | `labs` | frontier techniques, each with a falsifiable claim |
 
 ### Fail-safe defaults
@@ -184,6 +194,7 @@ code works* — every lab module is tested, failure paths included.
 | [05 · Cost and latency](docs/05-cost-and-latency.md) | the levers, in order of payoff |
 | [06 · Frontier index](docs/06-frontier-index.md) | every lab's kill criterion |
 | [07 · Assurance](docs/07-assurance.md) | turning coding principles into controls |
+| [08 · Operations](docs/08-operations.md) | rate limits, `doctor`, retention, and where they came from |
 
 ## For Claude Code sessions
 

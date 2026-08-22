@@ -12,6 +12,9 @@ techniques that are promising but not yet proven:
     evals      a variance-aware suite you can gate CI on
     assurance  four coding principles compiled into gates that can fail
     audit      tamper-evident trail, deny-by-default authority, dual control
+    limits     a token bucket in front of the provider
+    retention  tiered pruning for traces and audit chains
+    doctor     a self-test that reports rather than raises
     labs       frontier techniques, each with a falsifiable claim
 
 Nothing here requires the Anthropic SDK to import. Everything can be exercised
@@ -36,6 +39,7 @@ from .assurance import (
 )
 from .audit import AuditLog, DualControl, SafePolicy, audited
 from .context import Chunk, Packed, build_context, pack, rank, repo_map, walk_repo
+from .doctor import doctor, render_doctor
 from .evals import (
     Case,
     Grade,
@@ -59,6 +63,7 @@ from .guard import (
     validate_json,
     wrap_untrusted,
 )
+from .limits import RateLimitExceeded, TokenBucket, with_rate_limit
 from .loop import Agent, Budget, BudgetExceeded, RunResult, Step
 from .provider import (
     AnthropicProvider,
@@ -70,6 +75,7 @@ from .provider import (
     tool_response,
     with_retry,
 )
+from .retention import RetentionReport, TierPolicy, sweep_audit, sweep_jsonl, tier_for_age
 from .tools import Decision, GatedPolicy, Tool, ToolPolicy, ToolRegistry, tool
 from .trace import TracedProvider, Tracer, cost_usd
 from .types import ProviderError, Request, Response, ToolCall, ToolResult, Usage
@@ -94,6 +100,7 @@ __all__ = [
     "Decision",
     "default_provider",
     "diff_discipline",
+    "doctor",
     "DualControl",
     "excludes",
     "FakeProvider",
@@ -110,12 +117,15 @@ __all__ = [
     "Provider",
     "ProviderError",
     "rank",
+    "RateLimitExceeded",
     "RecordingProvider",
     "redact",
+    "render_doctor",
     "repair_prompt",
     "repo_map",
     "Request",
     "Response",
+    "RetentionReport",
     "RunResult",
     "SafePolicy",
     "scan_injection",
@@ -124,9 +134,14 @@ __all__ = [
     "Suite",
     "SuiteResult",
     "sweep",
+    "sweep_audit",
+    "sweep_jsonl",
     "text_response",
-    "Tool",
+    "tier_for_age",
+    "TierPolicy",
+    "TokenBucket",
     "tool",
+    "Tool",
     "tool_response",
     "ToolCall",
     "ToolPolicy",
@@ -141,6 +156,7 @@ __all__ = [
     "Verdict",
     "Violation",
     "walk_repo",
+    "with_rate_limit",
     "with_retry",
     "wrap_untrusted",
     "__version__",
