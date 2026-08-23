@@ -467,3 +467,81 @@ def test_validate_json_rejects_bool_where_integer_expected():
 def test_repair_prompt_includes_the_error_and_the_schema():
     prompt = repair_prompt('{"n":', "unexpected end", {"type": "object"})
     assert "unexpected end" in prompt and "Required schema" in prompt
+
+
+# --------------------------------------------------------------------------- #
+# context: the embedding seam
+# --------------------------------------------------------------------------- #
+
+
+def test_hash_embed_is_deterministic_and_normalized():
+    from llmforge.context import EMBEDDING_DIMS, cosine_similarity, hash_embed
+
+    vector = hash_embed("some text")
+    assert len(vector) == EMBEDDING_DIMS
+    assert cosine_similarity(vector, hash_embed("some text")) == pytest.approx(1.0)
+
+
+def test_unrelated_text_scores_near_zero_not_near_one():
+    """The obvious b/255 projection puts every vector in the positive orthant,
+    where unrelated strings score ~0.77 -- a floor that swamps the signal."""
+    from llmforge.context import cosine_similarity, hash_embed
+
+    assert cosine_similarity(hash_embed("hello"), hash_embed("world")) < 0.2
+
+
+def test_cosine_similarity_handles_empty_and_mismatched_input():
+    from llmforge.context import cosine_similarity
+
+    assert cosine_similarity([], [1.0]) == 0.0
+    assert cosine_similarity([1.0, 0.0], [1.0]) == 0.0
+    assert cosine_similarity([0.0, 0.0], [0.0, 0.0]) == 0.0
+
+
+def test_embedding_contributes_a_visible_reason(tmp_path):
+    from llmforge.context import hash_embed, rank, walk_repo
+
+    (tmp_path / "a.py").write_text("def paint():\n    pass\n")
+    chunk = rank("paint", walk_repo(tmp_path), tmp_path, embed=hash_embed)[0]
+    assert any("semantic similarity" in reason for reason in chunk.reasons)
+    assert chunk.similarity > 0
+
+
+def test_a_failing_embedder_degrades_ranking_instead_of_killing_it(tmp_path):
+    from llmforge.context import rank, walk_repo
+
+    (tmp_path / "auth.py").write_text("def verify_token(t):\n    return True\n")
+
+    def broken(_text: str) -> list[float]:
+        raise RuntimeError("embedding service down")
+
+    chunks = rank("verify token", walk_repo(tmp_path), tmp_path, embed=broken)
+    assert chunks[0].path == "auth.py"
+    assert any("embedding failed" in reason for reason in chunks[0].reasons)
+
+
+def test_ranking_without_an_embedder_is_unchanged(tmp_path):
+    from llmforge.context import rank, walk_repo
+
+    (tmp_path / "auth.py").write_text("def verify_token(t):\n    return True\n")
+    chunk = rank("verify token", walk_repo(tmp_path), tmp_path)[0]
+    assert chunk.similarity == 0.0
+    assert not any("semantic" in reason for reason in chunk.reasons)
+
+
+def test_a_budget_within_the_ceiling_is_returned_unchanged():
+    budget = Budget(max_steps=5, max_usd=1.0)
+    assert budget.within(Budget(max_steps=10, max_usd=2.0)) is budget
+
+
+def test_a_budget_over_the_ceiling_is_refused_not_clamped():
+    """Silently lowering a budget means a run quietly does a fraction of the
+    job and reports success -- invisible exactly when someone relied on it."""
+    with pytest.raises(ValueError, match="max_usd=50.0 exceeds the ceiling of 5.0"):
+        Budget(max_usd=50.0).within(Budget(max_usd=5.0))
+
+
+def test_every_exceeded_field_is_reported_not_just_the_first():
+    with pytest.raises(ValueError) as excinfo:
+        Budget(max_steps=99, max_usd=99.0).within(Budget(max_steps=10, max_usd=5.0))
+    assert "max_steps" in str(excinfo.value) and "max_usd" in str(excinfo.value)

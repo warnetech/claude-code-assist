@@ -24,6 +24,26 @@ A lesson is worth keeping only if it would have changed what the agent did.
 `distill` drops everything else; without that filter you get a paragraph of
 restated obviousness that costs context forever.
 
+## The reinforcement model
+
+Ported from the signature engine in `tewartech-node/claude-command-cli`, which
+had already found both failure modes a naive store hits:
+
+| Failure | Naive version | Fix |
+|---|---|---|
+| duplicate spawning | merge on exact string match | match on significant-word overlap; mint only when nothing matched |
+| runaway confidence | linear growth | `weight += (max - weight) * rate`, flat penalty on contradiction |
+
+`confidence` then discounts weight by the observed contradiction rate, and
+decays with age — that last part is this module's addition, since an attack
+signature describes a pattern that does not rot and a lesson describes a
+codebase that does.
+
+`store.saturated()` is the part worth using. A lesson that has learned all
+reinforcement can teach it should be **promoted out of the store** into a
+`CLAUDE.md` line, a lint rule, or a test. A lesson that has to be re-recalled
+forever is one the codebase should have been made to enforce.
+
 ## How it would fail
 
 **Lesson rot.** A distilled lesson is a snapshot of a codebase that keeps

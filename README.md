@@ -11,7 +11,7 @@ the Anthropic SDK is optional and lazily imported, so the entire library, its
 tests, and its examples run offline against a scripted provider.
 
 ```bash
-make install && make check     # 228 Python assertions, 123 TypeScript, all offline
+make install && make check     # 247 Python assertions, 123 TypeScript, all offline
 llmforge doctor                # self-test: reports rather than raises
 python examples/02_gate_catches_a_drive_by.py
 ```

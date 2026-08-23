@@ -354,11 +354,13 @@ def test_distill_tolerates_unparseable_output():
 
 
 def test_store_merges_duplicates_and_counts_confirmations(tmp_path):
+    """Every add is an observation, including the first -- so two adds of the
+    same claim is one lesson with two confirmations behind it."""
     store = LessonStore(tmp_path / "l.json")
     store.add(Lesson(claim="use pnpm"))
     store.add(Lesson(claim="Use pnpm"))
     assert len(store.lessons) == 1
-    assert store.lessons[0].confirmed == 1
+    assert store.lessons[0].confirmed == 2
 
 
 def test_contradiction_lowers_confidence(tmp_path):
@@ -436,3 +438,114 @@ def test_redteam_tolerates_unparseable_output():
 def test_probes_convert_into_eval_cases():
     cases = attack_code(FakeProvider([PROBES]), "c", "k").as_cases()
     assert cases[0]["id"] == "redteam.empty_input"
+
+
+# --------------------------------------------------------------------------- #
+# labs: memory -- the reinforcement model
+# --------------------------------------------------------------------------- #
+
+
+def test_a_rephrased_claim_reinforces_rather_than_duplicating(tmp_path):
+    """The duplicate-spawning fix: four half-confirmed lessons help nobody."""
+    store = LessonStore(tmp_path / "l.json")
+    store.add(Lesson(claim="migrations must be reversible"))
+    store.add(Lesson(claim="Migrations have to be reversible."))
+
+    assert len(store.lessons) == 1
+    assert store.lessons[0].occurrences == 2
+    assert store.lessons[0].confirmed == 2
+
+
+def test_a_genuinely_different_claim_is_not_merged(tmp_path):
+    store = LessonStore(tmp_path / "l.json")
+    store.add(Lesson(claim="migrations must be reversible"))
+    store.add(Lesson(claim="the lint step rejects unsorted imports"))
+    assert len(store.lessons) == 2
+
+
+def test_confirmation_growth_is_asymptotic_never_exceeding_the_ceiling(tmp_path):
+    from llmforge.labs.memory import MAX_WEIGHT
+
+    store = LessonStore(tmp_path / "l.json")
+    lesson = store.add(Lesson(claim="tests live in the tests directory"))
+
+    gains = []
+    previous = lesson.weight
+    for _ in range(20):
+        lesson.reinforce(true_positive=True)
+        gains.append(lesson.weight - previous)
+        previous = lesson.weight
+
+    assert lesson.weight <= MAX_WEIGHT
+    # Each confirmation moves it less than the last.
+    assert all(later <= earlier for earlier, later in zip(gains, gains[1:], strict=False))
+
+
+def test_a_contradiction_cannot_be_undone_by_one_confirmation(tmp_path):
+    store = LessonStore(tmp_path / "l.json")
+    lesson = store.add(Lesson(claim="the deploy script is idempotent"))
+    for _ in range(4):
+        lesson.reinforce(true_positive=True)
+
+    before = lesson.weight
+    lesson.reinforce(true_positive=False)
+    lesson.reinforce(true_positive=True)
+    assert lesson.weight < before
+
+
+def test_contradiction_matches_a_rephrasing(tmp_path):
+    store = LessonStore(tmp_path / "l.json")
+    store.add(Lesson(claim="migrations must be reversible"))
+    before = store.lessons[0].confidence
+
+    penalised = store.contradict("migrations need to be reversible")
+    assert len(penalised) == 1
+    assert store.lessons[0].confidence < before
+    assert store.lessons[0].contradicted == 1
+
+
+def test_saturation_marks_a_lesson_ready_to_graduate(tmp_path):
+    store = LessonStore(tmp_path / "l.json")
+    lesson = store.add(Lesson(claim="generated files must not be edited by hand"))
+    assert not lesson.saturated
+
+    for _ in range(8):
+        lesson.reinforce(true_positive=True)
+    assert lesson.saturated
+    assert store.saturated() == [lesson]
+
+
+def test_prune_drops_lessons_reinforcement_has_buried(tmp_path):
+    store = LessonStore(tmp_path / "l.json")
+    good = store.add(Lesson(claim="the api is versioned under v2"))
+    bad = store.add(Lesson(claim="config lives in the etc folder"))
+    for _ in range(6):
+        bad.reinforce(true_positive=False)
+
+    dropped = store.prune()
+    assert dropped == [bad]
+    assert store.lessons == [good]
+
+
+def test_store_tolerates_a_record_from_an_earlier_schema(tmp_path):
+    """Losing a repo's accumulated memory to a field rename is the worse
+    outcome; unknown keys are dropped rather than refused."""
+    path = tmp_path / "l.json"
+    path.write_text(
+        json.dumps([{"claim": "old format", "scope": "repo", "legacy_field": 1}])
+    )
+    store = LessonStore(path)
+    assert [x.claim for x in store.lessons] == ["old format"]
+
+
+def test_confidence_discounts_by_the_contradiction_rate(tmp_path):
+    store = LessonStore(tmp_path / "l.json")
+    steady = store.add(Lesson(claim="alpha beta gamma delta"))
+    flaky = store.add(Lesson(claim="epsilon zeta eta theta"))
+    for _ in range(4):
+        steady.reinforce(true_positive=True)
+        flaky.reinforce(true_positive=True)
+    for _ in range(2):
+        flaky.reinforce(true_positive=False)
+
+    assert steady.confidence > flaky.confidence

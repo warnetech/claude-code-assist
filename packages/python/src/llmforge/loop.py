@@ -52,6 +52,40 @@ class Budget:
     on_exceeded: str = "raise"
     """``"raise"`` or ``"stop"`` -- stop returns the partial run instead."""
 
+    def within(self, ceiling: Budget) -> Budget:
+        """Validate this budget against an operator-set ceiling.
+
+        **Refuses, never clamps.** Silently lowering a budget to fit means a
+        run that was configured to do a large job quietly does a fraction of it
+        and reports success -- the failure is invisible at exactly the moment
+        someone was relying on the number they set. A misconfigured budget
+        should fail loudly at startup instead.
+
+        Borrowed from the container-profile check in
+        tewartech-node/claude-command-cli, which makes the same call for memory
+        and CPU ceilings: *"a profile that requests more than the configured
+        maximum is refused, not clamped, so a misconfigured scenario fails
+        loudly instead of silently running under-isolated."*
+
+        >>> Budget(max_steps=5).within(Budget(max_steps=10)).max_steps
+        5
+        """
+        exceeded = [
+            f"{field}={mine} exceeds the ceiling of {theirs}"
+            for field, mine, theirs in (
+                ("max_steps", self.max_steps, ceiling.max_steps),
+                ("max_seconds", self.max_seconds, ceiling.max_seconds),
+                ("max_usd", self.max_usd, ceiling.max_usd),
+                ("max_pause_resumes", self.max_pause_resumes, ceiling.max_pause_resumes),
+            )
+            if mine > theirs
+        ]
+        if exceeded:
+            raise ValueError(
+                "budget exceeds the configured ceiling: " + "; ".join(exceeded)
+            )
+        return self
+
 
 @dataclass(slots=True)
 class Step:

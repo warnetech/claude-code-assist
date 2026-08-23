@@ -112,6 +112,9 @@ changed on the way:
 | `warnetech_cli/diagnostics.py` | `llmforge.doctor` | same three rules verbatim; checks are about the library rather than a server |
 | hot/warm/ghost `RetentionPolicy` | `llmforge.retention` | reduced to what a library can honestly promise, plus the audit-chain carve-out |
 | the middleware chain's documented ordering | canonical wrapper order, above | the *discipline* of writing the order down and saying why |
+| `signature_engine` reinforcement formulas | `labs/05-memory`'s `LessonStore` | signatures do not rot; lessons do, so confidence also decays with age |
+| `embeddings.py`'s pluggable `embed_fn` | `context.hash_embed` + `rank(embed=...)` | the default projection was re-centred — see below |
+| `container_runner`'s refuse-don't-clamp check | `Budget.within(ceiling)` | same principle, applied to autonomy rather than memory and CPU |
 | `tests/security/test_envelope_interop.py` | `fixtures/assurance-parity.json` | see below — the most important one |
 
 ### The parity fixtures
@@ -148,6 +151,63 @@ suites load. Assertions are on the machine-readable `Violation.code`, never on
 prose — messages get reworded, codes do not. **Adding a finding means adding it
 to the fixtures first, then to both implementations.**
 
+### The reinforcement model
+
+`LessonStore` previously merged on an exact claim string and computed
+confidence from an ad-hoc ratio. The signature engine had already solved the
+same problem properly, and its two lessons both applied:
+
+- **Duplicate spawning.** *"a payload that already has three weak matching
+  signatures must reinforce those, not mint a fourth."* Merging on an exact
+  string meant "migrations must be reversible" and "Migrations have to be
+  reversible." became two lessons, each carrying half the evidence, neither
+  ever reaching confidence. Matching is now on significant-word overlap, and a
+  new lesson is minted only when nothing matched.
+- **Runaway confidence.** Growth is asymptotic —
+  `weight += (max - weight) * rate` — so each confirmation moves it less than
+  the last, and a contradiction subtracts a flat penalty that one confirmation
+  cannot undo. `confidence` then discounts weight by the observed contradiction
+  rate.
+
+`saturated()` is the part worth using: a lesson that has learned everything
+reinforcement can teach it should be **promoted out of the store** into
+something durable — a `CLAUDE.md` line, a lint rule, a test. A lesson that has
+to be re-recalled forever is one the codebase should have been made to enforce.
+
+One thing was *added* rather than ported: age decay. An attack signature
+describes a pattern that does not rot; a lesson describes a codebase that does.
+
+### The embedding default, and a bug in porting it
+
+`context.rank` now takes an optional `embed` callable, with a deterministic
+hash-projection default so the seam is exercised rather than being a branch
+that only runs in production.
+
+The direct port had a real flaw. The original projects bytes as `b / 255`,
+which puts every vector in the positive orthant — so two *unrelated* strings
+score **0.77** cosine similarity. For its purpose (near-duplicate recall, where
+you look for ≈1.0) that is harmless. As a ranking weight it is not: the floor
+swamps the signal. Re-centring on zero (`(b - 127.5) / 127.5`) drops unrelated
+similarity to ~0.01.
+
+`embed` stays **off by default**. Lexical signals are free and explainable, and
+on a codebase they are strong — identifiers are shared vocabulary, not prose.
+An embedder only pays for itself when the query and the code use different
+words for the same thing. Semantic similarity is blended with, never
+substituted for, the lexical score, and a failing embedder degrades ranking
+rather than killing it.
+
+### Refuse, do not clamp
+
+The container runner refuses a profile requesting more than the configured
+maximum rather than clamping it, *"so a misconfigured scenario fails loudly
+instead of silently running under-isolated."*
+
+`Budget.within(ceiling)` applies that to autonomy. Silently lowering a budget
+means a run configured for a large job quietly does a fraction of it and
+reports success — the failure is invisible at exactly the moment someone was
+relying on the number they set.
+
 ### What was deliberately not taken
 
 - The three-layer CLI → server → repo architecture. llmforge is a library.
@@ -155,8 +215,10 @@ to the fixtures first, then to both implementations.**
 - The control-plane scoring, anomaly and signature engines. Those solve
   network-defence problems, not codebase-integration ones.
 
-One idea from the learning engine is worth flagging as *not yet taken*: its
-rule that a payload matching three weak signatures must **reinforce those, not
-mint a fourth**. `labs/05-memory`'s `LessonStore` merges on an exact
-claim-string match, which is the naive version of the same problem and will
-duplicate near-identical lessons. That is a real known gap.
+- The recall planner's coverage-ratio slice selection. `context.pack` fills a
+  token budget best-first, which is the same shape; the coverage target only
+  makes sense when you know the total size of what you are reconstructing.
+
+The gap flagged in the previous revision — the learning engine's
+reinforce-don't-mint rule — is now closed; see **The reinforcement model**
+above.

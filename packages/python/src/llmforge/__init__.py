@@ -38,7 +38,17 @@ from .assurance import (
     gate_agent,
 )
 from .audit import AuditLog, DualControl, SafePolicy, audited
-from .context import Chunk, Packed, build_context, pack, rank, repo_map, walk_repo
+from .context import (
+    Chunk,
+    Packed,
+    build_context,
+    cosine_similarity,
+    hash_embed,
+    pack,
+    rank,
+    repo_map,
+    walk_repo,
+)
 from .doctor import doctor, render_doctor
 from .evals import (
     Case,
@@ -96,6 +106,7 @@ __all__ = [
     "Chunk",
     "complexity_budget",
     "contains",
+    "cosine_similarity",
     "cost_usd",
     "Decision",
     "default_provider",
@@ -107,6 +118,7 @@ __all__ = [
     "gate_agent",
     "GatedPolicy",
     "Grade",
+    "hash_embed",
     "json_valid",
     "llm_judge",
     "matches",
@@ -140,8 +152,8 @@ __all__ = [
     "tier_for_age",
     "TierPolicy",
     "TokenBucket",
-    "tool",
     "Tool",
+    "tool",
     "tool_response",
     "ToolCall",
     "ToolPolicy",

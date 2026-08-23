@@ -18,6 +18,8 @@ different tokenizer entirely.
 
 from __future__ import annotations
 
+import hashlib
+import math
 import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -42,6 +44,50 @@ ANCHOR_NAMES = {
 }
 
 TokenCounter = Callable[[str], int]
+Embedder = Callable[[str], list[float]]
+"""Text to a vector. Any embedder will do; llmforge never assumes which."""
+
+EMBEDDING_DIMS = 128
+
+
+def hash_embed(text: str, dims: int = EMBEDDING_DIMS) -> list[float]:
+    """A deterministic hash-projection embedding. No dependency, no network.
+
+    **This is not semantic.** Two paraphrases of the same idea get unrelated
+    vectors. It detects near-duplicates and nothing else, so as a *ranking*
+    signal it contributes approximately nothing -- which is why ``embed`` is
+    off by default in :func:`rank`.
+
+    Its job is to keep the embedding seam exercised: a code path that only
+    runs when someone wires up a real embedder is a code path that is broken
+    the first time someone does.
+
+    Swap in a real embedder -- a sentence transformer, a hosted API -- via the
+    ``embed`` parameter on :func:`rank`. Nothing here assumes which.
+
+    Adapted from the embeddings module in tewartech-node/claude-command-cli,
+    which made the same call: ship a deterministic default so the code path is
+    live, and let callers pay for semantics when they need them.
+    """
+    digest = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
+    raw = (digest * ((dims // len(digest)) + 1))[:dims]
+    # Centred on zero, not scaled from zero. The obvious `b / 255` puts every
+    # vector in the positive orthant, where unrelated strings score ~0.77
+    # cosine similarity -- a floor high enough that the signal is swamped by
+    # it. Centring restores ~0 for unrelated text, which is what a ranking
+    # weight needs.
+    vector = [(b - 127.5) / 127.5 for b in raw]
+    magnitude = math.sqrt(sum(v * v for v in vector))
+    return [v / magnitude for v in vector] if magnitude else vector
+
+
+def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+    """Cosine similarity, clamped to [0, 1]. Zero for mismatched or empty input."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    magnitude = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return max(0.0, min(1.0, dot / magnitude)) if magnitude else 0.0
 
 
 def estimate_tokens(text: str) -> int:
@@ -62,6 +108,7 @@ class Chunk:
     reasons: list[str] = field(default_factory=list)
     tokens: int = 0
     kind: str = "file"
+    similarity: float = 0.0
 
     def render(self) -> str:
         return f"<file path=\"{self.path}\">\n{self.text}\n</file>"
@@ -189,6 +236,8 @@ def rank(
     *,
     pinned: Iterable[str] = (),
     recent: Iterable[str] = (),
+    embed: Embedder | None = None,
+    embedding_weight: float = 15.0,
 ) -> list[Chunk]:
     """Score files against a query, with the reason for each score attached.
 
@@ -200,6 +249,18 @@ def rank(
       repeating a word two hundred times
     * recent edits (git status, open editors) -- proximity to the current task
     * anchor files that orient a reader who has never seen the repo
+    * semantic similarity, when an ``embed`` function is supplied
+
+    ``embed`` is off by default and that is deliberate. Lexical signals are
+    free, explainable, and on a codebase they are strong -- identifiers are
+    shared vocabulary, not prose. An embedder adds latency and cost per file
+    and only pays for itself when the query and the code use *different* words
+    for the same thing ("why is checkout slow" against a file that never says
+    "slow"). Turn it on when you have measured that case, not before.
+
+    Semantic similarity is blended with, never substituted for, the lexical
+    score: an embedder that silently returns garbage would otherwise take the
+    ranking down with it.
 
     The ``reasons`` list is the point. A retrieval step you cannot explain is a
     retrieval step you cannot debug when it starts returning the wrong files.
@@ -208,6 +269,13 @@ def rank(
     wanted = _terms(query)
     pinned_set = {Path(p).as_posix() for p in pinned}
     recent_set = {Path(p).as_posix() for p in recent}
+    query_vector: list[float] | None = None
+    embed_error: str | None = None
+    if embed is not None:
+        try:
+            query_vector = embed(query)
+        except Exception as exc:  # noqa: BLE001 - retrieval degrades, never dies
+            embed_error = f"embedding failed: {type(exc).__name__}"
     chunks: list[Chunk] = []
 
     for path in paths:
@@ -244,6 +312,19 @@ def rank(
             score += 8.0
             reasons.append("anchor file")
 
+        similarity = 0.0
+        if embed_error:
+            reasons.append(embed_error)
+        elif query_vector is not None and embed is not None:
+            try:
+                similarity = cosine_similarity(query_vector, embed(text))
+            except Exception as exc:  # noqa: BLE001 - one bad file must not sink the rest
+                reasons.append(f"embedding failed: {type(exc).__name__}")
+            else:
+                if similarity > 0:
+                    score += embedding_weight * similarity
+                    reasons.append(f"semantic similarity {similarity:.2f}")
+
         # Mild preference for smaller files at equal relevance: three small
         # files usually explain more than one large one for the same budget.
         score -= min(5.0, len(text) / 20_000)
@@ -255,6 +336,7 @@ def rank(
                 score=score,
                 reasons=reasons,
                 tokens=estimate_tokens(text),
+                similarity=similarity,
             )
         )
 
@@ -357,8 +439,9 @@ def build_context(
     pinned: Iterable[str] = (),
     recent: Iterable[str] = (),
     counter: TokenCounter = estimate_tokens,
+    embed: Embedder | None = None,
 ) -> Packed:
     """walk -> rank -> pack, in one call. The 90% path."""
     paths = walk_repo(root)
-    ranked = rank(query, paths, root, pinned=pinned, recent=recent)
+    ranked = rank(query, paths, root, pinned=pinned, recent=recent, embed=embed)
     return pack(ranked, budget_tokens=budget_tokens, counter=counter)

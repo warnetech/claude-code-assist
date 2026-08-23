@@ -12,15 +12,28 @@ Everything else is trivia that costs tokens on every future run.
 
 **How it would fail.** Lesson rot. A distilled lesson is a snapshot of a
 codebase that keeps moving; six months on, a confident wrong lesson is worse
-than no memory, because the agent trusts it. This implementation therefore
-timestamps every lesson, tracks confirmations and contradictions, and decays
-confidence -- a lesson that has not been reconfirmed is surfaced with its age
-attached rather than asserted flatly.
+than no memory, because the agent trusts it.
+
+The reinforcement model below is ported from the signature engine in
+tewartech-node/claude-command-cli, which solved the same problem for attack
+signatures and had already found the two failure modes a naive version hits:
+
+* **Duplicate spawning.** Merging on an exact string match means "migrations
+  must be reversible" and "Migrations have to be reversible." become two
+  lessons, each with half the evidence, and neither ever reaches confidence.
+  The fix is that a claim matching *anything* reinforces those matches rather
+  than minting another -- new lessons are only created when nothing matched.
+* **Runaway confidence.** Linear growth lets a lesson confirmed twenty times
+  outrank a directly contradicted one. Growth is therefore asymptotic --
+  ``weight += (max - weight) * rate`` -- so each confirmation moves it less
+  than the last, and a contradiction subtracts a flat penalty that a single
+  confirmation cannot undo.
 
 **Also load-bearing:** memory is an injection surface. A lesson distilled from
 a run that processed a hostile README can persist an attacker's instruction
-into every future session. Lessons are scanned on write and stored with
-provenance, and this is not optional.
+into every future session. Lessons are scanned on write and **quarantined**,
+not silently dropped -- you want to *see* that something tried to write an
+instruction into persistent memory.
 
 **Measurement.** Task success and step count with memory on versus off, on
 tasks the agent has seen a sibling of before. If step count does not drop, the
@@ -30,8 +43,10 @@ lessons are not carrying information.
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import asdict, dataclass, field
+from dataclasses import fields as dataclasses_fields
 from pathlib import Path
 from typing import Any
 
@@ -80,15 +95,60 @@ Return JSON only.\
 """
 
 
+# Reinforcement parameters, ported from the signature engine that inspired
+# this. The exact values matter less than their relationships: `penalty` must
+# exceed one confirmation's gain near the ceiling, or a contradicted lesson
+# climbs back on the next confirmation.
+MIN_WEIGHT = 0.05
+MAX_WEIGHT = 0.95
+REINFORCEMENT_RATE = 0.20
+PENALTY = 0.25
+CONFIDENCE_FLOOR = 0.0
+CONFIDENCE_CEILING = 0.99
+SATURATION_WEIGHT = 0.85
+SATURATION_MIN_OCCURRENCES = 5
+
+_STOPWORDS = frozenset(
+    ["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have", "in", "is", "it", "its", "of", "on", "or", "that", "the", "this", "to", "was", "were", "will", "with", "must", "should", "always", "never"]
+)
+
+
+def claim_key(claim: str) -> frozenset[str]:
+    """The comparable content of a claim: significant words, order-independent.
+
+    Matching on this rather than the exact string is what stops "migrations
+    must be reversible" and "Migrations have to be reversible." becoming two
+    half-confirmed lessons instead of one confident lesson.
+    """
+    words = re.findall(r"[a-z0-9]+", claim.lower())
+    return frozenset(w for w in words if w not in _STOPWORDS and len(w) > 2)
+
+
+def similarity(a: frozenset[str], b: frozenset[str]) -> float:
+    """Jaccard overlap. 1.0 is identical content, 0.0 is disjoint."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 @dataclass(slots=True)
 class Lesson:
-    """One durable claim about a codebase, with provenance and an age."""
+    """One durable claim about a codebase, with provenance and a weight.
+
+    ``weight`` is what reinforcement moves; ``confidence`` is what callers
+    read. They differ because confidence discounts weight by the observed
+    contradiction rate, so a heavily-reinforced lesson that is also frequently
+    wrong does not present as certain.
+    """
 
     claim: str
     scope: str = "repo"
     evidence: str = ""
     source: str = "unknown"
     created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    weight: float = 0.5
+    occurrences: int = 0
     confirmed: int = 0
     contradicted: int = 0
     quarantined: bool = False
@@ -99,19 +159,54 @@ class Lesson:
         return (time.time() - self.created_at) / 86400
 
     @property
-    def confidence(self) -> float:
-        """Confirmations minus contradictions, decayed by age.
+    def key(self) -> frozenset[str]:
+        return claim_key(self.claim)
 
-        Deliberately crude. Its job is to order lessons and to stop a stale one
-        from being asserted as flatly as a fresh one -- not to be a probability.
+    @property
+    def confidence(self) -> float:
+        """Weight, discounted by the contradiction rate, then decayed by age.
+
+        The age decay is this module's own addition: a signature describes an
+        attack pattern that does not rot, while a lesson describes a codebase
+        that does. A lesson nobody has reconfirmed in a quarter should not
+        present as freshly as one confirmed yesterday.
         """
-        base = (1 + self.confirmed) / (1 + self.confirmed + 2 * self.contradicted)
-        decay = 0.5 ** (self.age_days / 90)
-        return round(base * (0.4 + 0.6 * decay), 3)
+        base = self.weight
+        if self.occurrences:
+            base *= 1 - (self.contradicted / self.occurrences)
+        decay = 0.5 ** (max(0.0, (time.time() - self.updated_at) / 86400) / 90)
+        value = base * (0.4 + 0.6 * decay)
+        return round(max(CONFIDENCE_FLOOR, min(CONFIDENCE_CEILING, value)), 3)
+
+    @property
+    def saturated(self) -> bool:
+        """Reinforcement has taught this lesson everything it can.
+
+        A saturated lesson is a candidate for promotion into a durable
+        document -- CLAUDE.md, a lint rule, a test -- rather than continued
+        tuning. That is the point of tracking it: the goal is to graduate
+        knowledge out of a fallible store, not to accumulate it forever.
+        """
+        return self.weight >= SATURATION_WEIGHT and self.occurrences >= SATURATION_MIN_OCCURRENCES
+
+    def reinforce(self, *, true_positive: bool) -> Lesson:
+        """One observation. Asymptotic on confirmation, flat penalty on
+        contradiction, so confidence cannot run away and cannot be trivially
+        restored after being contradicted."""
+        self.occurrences += 1
+        self.updated_at = time.time()
+        if true_positive:
+            self.confirmed += 1
+            self.weight = min(MAX_WEIGHT, self.weight + (MAX_WEIGHT - self.weight) * REINFORCEMENT_RATE)
+        else:
+            self.contradicted += 1
+            self.weight = max(MIN_WEIGHT, self.weight - PENALTY)
+        return self
 
     def render(self) -> str:
         age = f"{self.age_days:.0f}d" if self.age_days >= 1 else "new"
-        return f"- [{self.scope}] {self.claim} (confidence {self.confidence}, age {age})"
+        mark = " [saturated]" if self.saturated else ""
+        return f"- [{self.scope}] {self.claim} (confidence {self.confidence}, age {age}){mark}"
 
 
 class LessonStore:
@@ -125,42 +220,89 @@ class LessonStore:
     trust.
     """
 
+    #: Claim-content overlap above which two lessons are treated as the same.
+    #: Tuned so a rephrasing merges and a genuinely different claim about the
+    #: same subsystem does not.
+    MERGE_THRESHOLD = 0.6
+
     def __init__(self, path: str | Path = ".llmforge/lessons.json") -> None:
         self.path = Path(path)
         self.lessons: list[Lesson] = []
         if self.path.exists():
             raw = json.loads(self.path.read_text())
-            self.lessons = [Lesson(**entry) for entry in raw]
+            fields = {f.name for f in dataclasses_fields(Lesson)}
+            # Tolerate stores written by an earlier schema rather than refusing
+            # to load: losing a repository's accumulated memory to a field
+            # rename is a worse outcome than dropping an unknown key.
+            self.lessons = [Lesson(**{k: v for k, v in entry.items() if k in fields}) for entry in raw]
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps([asdict(x) for x in self.lessons], indent=2))
 
-    def add(self, lesson: Lesson) -> Lesson:
-        """Add a lesson, merging duplicates and quarantining suspicious ones.
+    def find(self, claim: str, *, threshold: float | None = None) -> list[Lesson]:
+        """Every stored lesson whose content overlaps ``claim``, best first."""
+        bar = self.MERGE_THRESHOLD if threshold is None else threshold
+        key = claim_key(claim)
+        scored = [(similarity(key, lesson.key), lesson) for lesson in self.lessons]
+        return [lesson for score, lesson in sorted(scored, key=lambda p: -p[0]) if score >= bar]
 
-        A lesson whose text matches injection heuristics is stored quarantined
-        rather than dropped: you want to *see* that something tried to write an
-        instruction into persistent memory, not have it silently vanish.
+    def add(self, lesson: Lesson) -> Lesson:
+        """Reinforce what this claim matches; mint only when nothing matched.
+
+        This is the duplicate-spawning fix. A claim that already has matching
+        lessons must strengthen those -- minting a near-identical fourth means
+        four lessons each carrying a quarter of the evidence, none of which
+        ever reaches confidence.
         """
         scan = scan_injection(lesson.claim + " " + lesson.evidence)
         if scan.suspicious:
             lesson.quarantined = True
 
-        key = lesson.claim.strip().lower()
-        for existing in self.lessons:
-            if existing.claim.strip().lower() == key:
-                existing.confirmed += 1
-                return existing
+        matches = self.find(lesson.claim)
+        if matches:
+            for existing in matches:
+                existing.reinforce(true_positive=True)
+                if lesson.evidence and lesson.evidence not in existing.evidence:
+                    existing.evidence = f"{existing.evidence}; {lesson.evidence}".strip("; ")
+            return matches[0]
+
+        lesson.reinforce(true_positive=True)
         self.lessons.append(lesson)
         return lesson
 
-    def contradict(self, claim: str) -> None:
-        """Record that a lesson turned out to be wrong."""
-        key = claim.strip().lower()
+    def contradict(self, claim: str) -> list[Lesson]:
+        """Record that a claim turned out to be wrong.
+
+        Returns what was penalised, so a caller can report it. Matching is the
+        same overlap used for merging -- a contradiction phrased differently
+        from the stored lesson must still land on it.
+        """
+        matches = self.find(claim)
+        for lesson in matches:
+            lesson.reinforce(true_positive=False)
+        return matches
+
+    def prune(self, *, min_confidence: float = 0.1) -> list[Lesson]:
+        """Drop lessons that reinforcement has driven into the ground.
+
+        A lesson contradicted more often than confirmed is not neutral -- it is
+        actively misleading, and keeping it costs context on every recall.
+        """
+        keep, dropped = [], []
         for lesson in self.lessons:
-            if lesson.claim.strip().lower() == key:
-                lesson.contradicted += 1
+            (dropped if lesson.confidence < min_confidence else keep).append(lesson)
+        self.lessons = keep
+        return dropped
+
+    def saturated(self) -> list[Lesson]:
+        """Lessons ready to graduate out of the store.
+
+        Promote these into something durable -- a CLAUDE.md line, a lint rule,
+        a test. A lesson that has to be re-recalled forever is one the codebase
+        should have been made to enforce.
+        """
+        return [lesson for lesson in self.lessons if lesson.saturated]
 
     def recall(
         self,
