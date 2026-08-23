@@ -252,21 +252,21 @@ def scan_hedging(text: str) -> Verdict:
 
 # Shapes that appear when a model builds for imagined future requirements.
 #
+# Removed: `unused-config-knob`, which claimed to flag "a configuration point
+# added without a second caller". Whether a config point has a second caller is
+# a cross-file fact, and a single-file regex cannot see callers -- so it never
+# could do what it claimed. In practice it fired on every `model:` and
+# `options:` in the repository (`model` contains `mode`; `options` contains
+# `option`), which is the cry-wolf failure mode: a check with a bad
+# false-positive rate gets ignored, and an ignored check is worse than no check
+# because it still occupies the slot. Detecting this properly needs call-graph
+# analysis, not a pattern table.
+#
 # Every pattern here matches BOTH Python and TypeScript/JavaScript syntax. A
 # Python harness routinely reviews TypeScript diffs and vice versa; a gate that
 # only recognises its own host language silently passes everything else, which
 # is worse than not running -- it reports "clean" on code it never understood.
 SPECULATIVE_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
-    (
-        "unused-config-knob",
-        re.compile(
-            r"^\s*(?:self\.|this\.)?(?:const\s+|let\s+|var\s+)?"
-            r"\w*(?:config|option|flag|mode|strategy|backend)\w*\s*[:=]",
-            re.M | re.I,
-        ),
-        "a configuration point added without a second caller is speculative "
-        "flexibility; inline the one behaviour you need",
-    ),
     (
         "abstract-base",
         re.compile(
@@ -418,15 +418,43 @@ def complexity_budget(
     return verdict
 
 
+# A line that opens a block, in either language: a Python compound statement
+# ending in `:`, or a C-family line ending in `{`.
+_BLOCK_OPENER = re.compile(
+    r"^(?:async\s+)?(?:if|elif|else|for|while|with|try|except|finally|def|class|match|case)\b"
+    r".*:\s*(?:#.*)?$"
+    r"|\{\s*(?://.*)?$"
+)
+
+
 def _max_indent_depth(code: str, tab_width: int = 4) -> int:
-    depth = 0
+    """Nesting depth, measured on lines that actually open a block.
+
+    Raw indentation is a bad proxy. A wrapped call argument or a multi-line
+    dict literal is indented four, eight, sixteen spaces without nesting
+    anything -- measuring indentation alone reported depth 8 for a file whose
+    real nesting is 3, which is a false positive that trains people to ignore
+    the check.
+
+    Counting only block openers (`if`/`for`/`def`/... in Python, a trailing
+    `{` in C-family syntax) measures the thing the check is named after. The
+    indent unit is inferred from those lines rather than assumed, so a file
+    does not measure differently depending on which language's implementation
+    ran -- see fixtures/assurance-parity.json.
+    """
+    openers: list[int] = []
     for line in code.splitlines():
-        if not line.strip():
+        stripped = line.strip()
+        if not stripped or not _BLOCK_OPENER.search(stripped):
             continue
-        spaces = len(line) - len(line.lstrip(" \t"))
-        spaces = line[:spaces].replace("\t", " " * tab_width)
-        depth = max(depth, len(spaces) // tab_width)
-    return depth
+        leading = len(line) - len(line.lstrip(" \t"))
+        openers.append(len(line[:leading].replace("\t", " " * tab_width)))
+
+    indents = [width for width in openers if width > 0]
+    if not indents:
+        return 0
+    unit = min(indents)
+    return max(width // unit for width in openers)
 
 
 # --------------------------------------------------------------------------- #

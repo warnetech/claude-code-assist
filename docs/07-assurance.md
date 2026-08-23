@@ -135,6 +135,45 @@ Pre-flight is the cheap moment. An assumption caught there costs one
 conversation turn; the same assumption caught in review costs a day; caught in
 production it costs whatever it costs.
 
+## What running them on themselves found
+
+The first CI run of the assurance job against this repository's own diff
+produced about thirty findings, all false positives. Three defects, none of
+which any unit test would have caught:
+
+**`unused-config-knob` was removed, not tuned.** It claimed to flag *"a
+configuration point added without a second caller"*. Whether a config point has
+a second caller is a cross-file fact, and a single-file regex cannot see
+callers — it never could do what it claimed. In practice it fired on every
+`model:` and `options:` in the repository, because `model` contains `mode` and
+`options` contains `option`. Detecting this properly needs call-graph analysis,
+not a pattern table.
+
+**Nesting was measured on indentation, which is a bad proxy.** A wrapped call
+argument or a multi-line dict is indented four, eight, sixteen spaces without
+nesting anything. `guard.py`, whose real nesting is 3, reported 8. Depth is now
+counted on lines that actually open a block, and the indent unit is inferred
+rather than assumed.
+
+**The CI job concatenated the whole diff into one blob.** Line numbers
+referenced a synthetic file (*line 13643*), and the fixtures and the
+deliberately-bad example were scanned as if they were product code — so the
+gates reported their own test material as defects. It now scans per file and
+skips paths whose entire purpose is to contain bad patterns.
+
+After all three, the same diff reports **0 blocking, 6 advisory** — six real
+nesting warnings on genuinely nested code.
+
+`test_our_own_source_passes_the_gates_we_ship` now runs every gate over every
+module in this package on every test run, so a check that starts firing on its
+own repository fails CI. That regression test is the actual fix; the three
+above are what it would have caught.
+
+The general lesson, and it is the one this whole document is about: **a check
+with a bad false-positive rate is worse than no check.** It still occupies the
+slot, and people learn to skip the output. Precision matters more than recall
+for anything advisory.
+
 ## What these gates cannot do
 
 Being explicit about this is load-bearing, because a green verdict that implies

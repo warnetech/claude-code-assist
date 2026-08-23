@@ -199,6 +199,16 @@ export class AssumptionLedger {
 
 // Shapes that appear when a model builds for imagined future requirements.
 //
+// Removed: `unused-config-knob`, which claimed to flag "a configuration point
+// added without a second caller". Whether a config point has a second caller is
+// a cross-file fact, and a single-file regex cannot see callers -- so it never
+// could do what it claimed. In practice it fired on every `model:` and
+// `options:` in the repository (`model` contains `mode`; `options` contains
+// `option`), which is the cry-wolf failure mode: a check with a bad
+// false-positive rate gets ignored, and an ignored check is worse than no check
+// because it still occupies the slot. Detecting this properly needs call-graph
+// analysis, not a pattern table.
+//
 // Every pattern here matches BOTH Python and TypeScript/JavaScript syntax. A
 // TypeScript harness routinely reviews Python diffs and vice versa; a gate that
 // only recognises its own host language silently passes everything else, which
@@ -207,11 +217,6 @@ export class AssumptionLedger {
 // Kept in lockstep with SPECULATIVE_PATTERNS in the Python package. The parity
 // fixtures fail if the two drift.
 const SPECULATIVE_PATTERNS: [string, RegExp, string][] = [
-  [
-    "unused-config-knob",
-    /^\s*(?:self\.|this\.)?(?:const\s+|let\s+|var\s+)?\w*(?:config|option|flag|mode|strategy|backend)\w*\s*[:=]/im,
-    "a configuration point added without a second caller is speculative flexibility; inline the one behaviour you need",
-  ],
   [
     "abstract-base",
     /^\s*(?:export\s+)?(?:abstract\s+)?class\s+\w*(?:Base|Abstract|Generic)\w*/m,
@@ -328,24 +333,37 @@ export function complexityBudget(code: string, options: ComplexityOptions = {}):
   return new Verdict(violations, ["simplicity-first"]);
 }
 
+// A line that opens a block, in either language: a Python compound statement
+// ending in `:`, or a C-family line ending in `{`.
+const BLOCK_OPENER =
+  /^(?:async\s+)?(?:if|elif|else|for|while|with|try|except|finally|def|class|match|case)\b.*:\s*(?:#.*)?$|\{\s*(?:\/\/.*)?$/;
+
 /**
- * Nesting depth, with the indent unit inferred rather than assumed.
+ * Nesting depth, measured on lines that actually open a block.
  *
- * Hardcoding a width makes the same file measure differently depending on which
- * language wrote the gate -- 2 in TypeScript, 4 in Python -- so identical code
- * gets two different verdicts. Taking the smallest non-zero indent actually
- * present removes that dependency.
+ * Raw indentation is a bad proxy. A wrapped call argument or a multi-line
+ * object literal is indented two, four, sixteen spaces without nesting
+ * anything -- measuring indentation alone reported depth 8 for a file whose
+ * real nesting is 3, a false positive that trains people to ignore the check.
+ *
+ * Counting only block openers measures the thing the check is named after. The
+ * indent unit is inferred from those lines rather than assumed, so a file does
+ * not measure differently depending on which language's implementation ran --
+ * pinned by fixtures/assurance-parity.json.
  */
 function maxIndentDepth(code: string, tabWidth = 4): number {
-  const indents: number[] = [];
+  const openers: number[] = [];
   for (const line of code.split("\n")) {
-    if (!line.trim()) continue;
+    const stripped = line.trim();
+    if (!stripped || !BLOCK_OPENER.test(stripped)) continue;
     const leading = line.length - line.trimStart().length;
-    const width = line.slice(0, leading).replace(/\t/g, " ".repeat(tabWidth)).length;
-    if (width > 0) indents.push(width);
+    openers.push(line.slice(0, leading).replace(/\t/g, " ".repeat(tabWidth)).length);
   }
-  const unit = indents.length ? Math.min(...indents) : tabWidth;
-  return indents.length ? Math.max(...indents.map((w) => Math.floor(w / unit))) : 0;
+
+  const indents = openers.filter((width) => width > 0);
+  if (!indents.length) return 0;
+  const unit = Math.min(...indents);
+  return Math.max(...openers.map((width) => Math.floor(width / unit)));
 }
 
 // --------------------------------------------------------------------------- //

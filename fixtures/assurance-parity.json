@@ -33,6 +33,24 @@
       "expect": []
     },
     {
+      "name": "continuation lines are not nesting",
+      "code": "def build():\n    return call(\n        first,\n            second,\n                third,\n                    fourth,\n    )\n",
+      "options": { "maxNesting": 2 },
+      "expect": []
+    },
+    {
+      "name": "real python nesting is caught",
+      "code": "def f():\n    if a:\n        for b in c:\n            while d:\n                with e:\n                    pass\n",
+      "options": { "maxNesting": 3 },
+      "expect": [["simplicity.nesting-depth", "warn"]]
+    },
+    {
+      "name": "real typescript nesting is caught",
+      "code": "function f() {\n  if (a) {\n    for (const b of c) {\n      while (d) {\n        go();\n      }\n    }\n  }\n}\n",
+      "options": { "maxNesting": 2 },
+      "expect": [["simplicity.nesting-depth", "warn"]]
+    },
+    {
       "name": "python abstract base",
       "code": "class HandlerBase:\n    pass\n",
       "options": {},

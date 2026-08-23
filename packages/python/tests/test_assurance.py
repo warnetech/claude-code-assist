@@ -6,6 +6,8 @@ the gate catch it? A gate that only passes is decoration.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from llmforge import Agent, FakeProvider
@@ -287,3 +289,45 @@ def test_gate_agent_allows_a_well_specified_run():
 def test_verdict_is_falsy_when_blocked_and_truthy_when_clean():
     assert not SuccessCriteria("x").check()
     assert SuccessCriteria("x").require("t passes", lambda: (True, "")).check()
+
+
+# --------------------------------------------------------------------------- #
+# the gates, applied to this repository
+# --------------------------------------------------------------------------- #
+
+#: Paths whose entire purpose is to contain bad patterns.
+_EXEMPT = ("test_assurance.py", "02_gate_catches_a_drive_by.py")
+
+
+def _own_sources() -> list[Path]:
+    root = Path(__file__).resolve().parents[3]
+    return [
+        path
+        for path in (root / "packages/python/src").rglob("*.py")
+        if not path.name.startswith("_") or path.name == "__init__.py"
+    ] + [
+        path
+        for path in (root / "examples").glob("*.py")
+        if path.name not in _EXEMPT
+    ]
+
+
+@pytest.mark.parametrize("path", _own_sources(), ids=lambda p: p.name)
+def test_our_own_source_passes_the_gates_we_ship(path: Path) -> None:
+    """A gate that fires constantly on its own repository is a gate that gets
+    ignored, and an ignored gate is worse than none -- it still occupies the
+    slot. This caught `unused-config-knob`, which matched every `model:` in the
+    codebase (`model` contains `mode`) while claiming to detect a cross-file
+    fact no single-file regex can see.
+    """
+    verdict = complexity_budget(path.read_text(encoding="utf-8"))
+    # `warn` is advisory by construction -- nesting and definition counts are
+    # judgment calls, and contorting real code to silence them would be the
+    # tail wagging the dog. Blockers and notes are the classes that must stay
+    # clean, because those are the ones that claim to have found a defect.
+    findings = [
+        f"{path.name}:{v.location or '?'} [{v.severity}] {v.message}"
+        for v in verdict.violations
+        if v.severity in ("blocker", "note")
+    ]
+    assert not findings, "gates fire on our own source:\n" + "\n".join(findings)

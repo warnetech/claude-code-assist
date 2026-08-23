@@ -88,15 +88,43 @@ jobs:
           cd packages/python
           PYTHONPATH=src python3 - <<'PY'
           import subprocess
-          from llmforge.assurance import complexity_budget, diff_discipline
+          from llmforge.assurance import Verdict, complexity_budget, diff_discipline
 
-          base = subprocess.run(
-              ["git", "merge-base", "HEAD", "origin/${{ github.base_ref }}"],
-              capture_output=True, text=True, cwd="../..").stdout.strip()
-          diff = subprocess.run(["git", "diff", base, "HEAD"],
-                                capture_output=True, text=True, cwd="../..").stdout
-          added = "\n".join(l[1:] for l in diff.splitlines()
-                            if l.startswith("+") and not l.startswith("+++"))
-          verdict = diff_discipline(diff) + complexity_budget(added)
+          # Paths whose entire purpose is to contain bad patterns. Scanning
+          # them reports the fixtures as defects and buries anything real.
+          EXEMPT = (
+              "fixtures/",
+              "examples/02_gate_catches_a_drive_by.py",
+              "packages/python/tests/test_assurance.py",
+              "packages/typescript/test/assurance.test.ts",
+          )
+
+          def git(*args: str) -> str:
+              return subprocess.run(
+                  ["git", *args], capture_output=True, text=True, cwd="../.."
+              ).stdout
+
+          base = git("merge-base", "HEAD", "origin/${{ github.base_ref }}").strip()
+          diff = git("diff", base, "HEAD")
+          verdict = diff_discipline(diff)
+
+          # Per file, not one concatenated blob: a blob makes every line number
+          # meaningless and mixes product code with test fixtures.
+          for path in git("diff", "--name-only", base, "HEAD").split():
+              if path.startswith(EXEMPT) or not path.endswith((".py", ".ts", ".js")):
+                  continue
+              added = "\n".join(
+                  line[1:]
+                  for line in git("diff", base, "HEAD", "--", path).splitlines()
+                  if line.startswith("+") and not line.startswith("+++")
+              )
+              if added.strip():
+                  file_verdict = complexity_budget(added)
+                  for violation in file_verdict.violations:
+                      violation.location = (
+                          f"{path}:{violation.location}" if violation.location else path
+                      )
+                  verdict = verdict + file_verdict
+
           print(verdict.report())
           PY
