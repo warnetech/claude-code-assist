@@ -195,6 +195,7 @@ code works* — every lab module is tested, failure paths included.
 | [06 · Frontier index](docs/06-frontier-index.md) | every lab's kill criterion |
 | [07 · Assurance](docs/07-assurance.md) | turning coding principles into controls |
 | [08 · Operations](docs/08-operations.md) | rate limits, `doctor`, retention, and where they came from |
+| [09 · Termux](docs/09-termux.md) | running on a phone, via proot-distro Debian |
 
 ## For Claude Code sessions
 
