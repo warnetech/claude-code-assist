@@ -14,6 +14,7 @@ There are no runtime dependencies.
 - Product plan: [`CLI-AI-Command-Center-PRD.md`](CLI-AI-Command-Center-PRD.md)
 - What is built, mapped to the PRD's gaps and personas: [`docs/roadmap.md`](docs/roadmap.md)
 - Where and why this departs from the PRD: [`docs/decisions.md`](docs/decisions.md)
+- Keys and services to set up: [`docs/credentials.md`](docs/credentials.md)
 
 ```bash
 pip install -e ".[dev]"
