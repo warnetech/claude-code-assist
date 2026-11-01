@@ -1,9 +1,11 @@
 name: CI
 
+# PRs and main only: a branch with an open PR no longer runs twice.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
