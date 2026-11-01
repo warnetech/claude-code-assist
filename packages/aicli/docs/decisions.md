@@ -21,3 +21,27 @@ Other choices:
   fallback can be audited later.
 - **Anthropic `stop_reason: "refusal"` is an error.** It comes back as HTTP 200
   with no text, and printing an empty string would hide it.
+
+## Added with the gap-list features (v0.2)
+
+- **A project `.aicli.toml` needs trust, pinned to its hash.** A project config
+  can start processes (MCP servers) and point a provider's `base_url`
+  elsewhere, which would send your API key there. So a freshly cloned repo's
+  config is ignored, with a notice, until `aicli project trust`, and any edit
+  needs trusting again. Templates are only prompt text and load without trust.
+- **MCP tools are denied by default.** Only names in a server's `allow` list
+  are offered to the model. A call to a tool it was never offered is refused,
+  not attempted.
+- **No fallback after a tool has run.** If the model fails mid-loop after a
+  tool executed, aicli stops (exit 1) instead of retrying on the next model,
+  because replaying side-effecting tools elsewhere is unsafe.
+- **The audit log holds hashes, not prompts.** It is meant to be shareable with
+  a security reviewer. The history database holds the content.
+- **Routing quality is user-assigned.** A measured score needs an eval harness;
+  until then the 1–5 scale in `[routing.quality]` is honest about being
+  your judgement.
+- **Budgets use the worst case across the whole fallback chain**, so a
+  fallback to a pricier model cannot slip past the check.
+- **Comparisons run in threads; SQLite writes stay on the main thread.**
+  Provider calls are I/O-bound, so threads give the speed-up without
+  needing a second SQLite connection.
