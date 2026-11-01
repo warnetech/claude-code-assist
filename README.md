@@ -206,12 +206,28 @@ code works* — every lab module is tested, failure paths included.
 - **`/assure`** — run the gates against your working tree
 - **`/lab <name>`** — scaffold a new technique with a falsifiable claim
 
+## aicli: the command center
+
+[`packages/aicli`](packages/aicli) is the CLI-to-AI Command Center, merged in
+from `warnetech/CLI-AI-Command-Center-PRD` as a git subtree. It is a
+local-first CLI for Claude, OpenAI and Ollama with logged fallback, cost
+estimates and a searchable SQLite history. Phase 1 of
+[its PRD](packages/aicli/CLI-AI-Command-Center-PRD.md) is implemented, with
+no runtime dependencies.
+
+```bash
+cd packages/aicli && pip install -e ".[dev]"
+aicli "hello" -m echo/echo      # offline echo provider
+aicli list providers
+```
+
 ## Layout
 
 ```
 packages/python/src/llmforge/   provider, tools, loop, context, guard, evals,
                                 assurance, audit, labs/
 packages/typescript/src/        the same core, mirrored
+packages/aicli/                 aicli: multi-model CLI (PRD Phase 1)
 labs/                           claim · protocol · failure mode · measurement
 docs/                           the reasoning behind all of it
 examples/                       run offline, no credentials

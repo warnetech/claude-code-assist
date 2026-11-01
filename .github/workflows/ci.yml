@@ -35,6 +35,29 @@ jobs:
         # The docstrings make claims; the doctests keep them true.
         run: pytest --doctest-modules src/llmforge -q
 
+  aicli:
+    name: aicli python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: packages/aicli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src tests
+      - name: Test
+        # No credentials: HTTP is stubbed and the echo provider stands in.
+        run: pytest -q
+
   typescript:
     name: typescript
     runs-on: ubuntu-latest
