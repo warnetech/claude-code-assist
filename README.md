@@ -11,7 +11,7 @@ the Anthropic SDK is optional and lazily imported, so the entire library, its
 tests, and its examples run offline against a scripted provider.
 
 ```bash
-make install && make check     # 247 Python assertions, 123 TypeScript, all offline
+make install && make check     # every test in all three packages, offline, no credentials
 llmforge doctor                # self-test: reports rather than raises
 python examples/02_gate_catches_a_drive_by.py
 ```
@@ -210,10 +210,17 @@ code works* — every lab module is tested, failure paths included.
 
 [`packages/aicli`](packages/aicli) is the CLI-to-AI Command Center, merged in
 from `warnetech/CLI-AI-Command-Center-PRD` as a git subtree. It is a
-local-first CLI for Claude, OpenAI and Ollama with logged fallback, cost
-estimates and a searchable SQLite history. Phase 1 of
-[its PRD](packages/aicli/CLI-AI-Command-Center-PRD.md) is implemented, with
-no runtime dependencies.
+local-first CLI for Claude, OpenAI-compatible APIs and Ollama, with:
+- cost-, latency- and quality-aware routing
+- budgets and an audit log of what leaves the machine
+- MCP tools (deny by default)
+- templates and resumable chats
+- `compare`, `batch` and `rerun`
+- a GitHub Action
+
+It has no runtime dependencies. Coverage of
+[its PRD](packages/aicli/CLI-AI-Command-Center-PRD.md), feature by feature and
+persona by persona, is in [`packages/aicli/docs/roadmap.md`](packages/aicli/docs/roadmap.md).
 
 ```bash
 cd packages/aicli && pip install -e ".[dev]"
@@ -227,7 +234,7 @@ aicli list providers
 packages/python/src/llmforge/   provider, tools, loop, context, guard, evals,
                                 assurance, audit, labs/
 packages/typescript/src/        the same core, mirrored
-packages/aicli/                 aicli: multi-model CLI (PRD Phase 1)
+packages/aicli/                 aicli: multi-model command-center CLI
 labs/                           claim · protocol · failure mode · measurement
 docs/                           the reasoning behind all of it
 examples/                       run offline, no credentials

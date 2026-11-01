@@ -9,10 +9,51 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  # Decides which packages a push or PR touched, so an aicli-only change does
+  # not pay for the TypeScript and llmforge matrices (and vice versa). Changes
+  # to workflows, the Makefile or shared fixtures run everything. When the
+  # base commit is unknown (a new branch, a force-push), everything runs.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      python: ${{ steps.diff.outputs.python }}
+      typescript: ${{ steps.diff.outputs.typescript }}
+      aicli: ${{ steps.diff.outputs.aicli }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only "$BASE" HEAD)
+          else
+            files="ALL"
+          fi
+          hit() { [ "$files" = "ALL" ] || grep -qE "$1|^\.github/workflows/|^Makefile$" <<< "$files"; }
+          for pkg in python typescript aicli; do
+            case $pkg in
+              python)     pattern='^packages/python/|^fixtures/|^examples/' ;;
+              typescript) pattern='^packages/typescript/|^fixtures/' ;;
+              aicli)      pattern='^packages/aicli/' ;;
+            esac
+            if hit "$pattern"; then echo "$pkg=true"; else echo "$pkg=false"; fi >> "$GITHUB_OUTPUT"
+          done
+          cat "$GITHUB_OUTPUT"
+
   python:
     name: python ${{ matrix.python }}
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +66,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: packages/python/pyproject.toml
       - name: Install
         run: pip install -e ".[dev]"
       - name: Lint
@@ -37,7 +80,10 @@ jobs:
 
   aicli:
     name: aicli python ${{ matrix.python }}
+    needs: changes
+    if: needs.changes.outputs.aicli == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +96,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: packages/aicli/pyproject.toml
       - name: Install
         run: pip install -e ".[dev]"
       - name: Lint
@@ -60,7 +108,10 @@ jobs:
 
   typescript:
     name: typescript
+    needs: changes
+    if: needs.changes.outputs.typescript == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: packages/typescript
@@ -80,7 +131,10 @@ jobs:
 
   examples:
     name: examples run offline
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -95,6 +149,7 @@ jobs:
     name: assurance gates on this PR
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:

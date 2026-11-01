@@ -1,4 +1,4 @@
-.PHONY: help install test lint typecheck check examples clean
+.PHONY: help install test lint typecheck check examples doctor clean
 
 PY := packages/python
 TS := packages/typescript
@@ -30,6 +30,10 @@ examples:                   ## Run the examples offline, with no credentials
 	python examples/02_gate_catches_a_drive_by.py
 
 check: lint typecheck test examples   ## Everything CI runs
+
+doctor:                     ## Self-tests and provider reachability; reports, never fails
+	-cd $(PY) && python -m llmforge.cli doctor
+	-cd $(AI) && python -m aicli list providers
 
 clean:
 	rm -rf $(PY)/.pytest_cache $(PY)/.ruff_cache $(AI)/.pytest_cache $(AI)/.ruff_cache $(TS)/dist .llmforge
