@@ -1,7 +1,7 @@
-.PHONY: help install test lint typecheck check examples doctor clean
+.PHONY: help install test lint typecheck check examples layout doctor clean
 
-PY := packages/python
-TS := packages/typescript
+PY := packages/llmforge-python
+TS := packages/llmforge-typescript
 AI := packages/aicli
 
 help:                       ## Show this help
@@ -29,7 +29,10 @@ examples:                   ## Run the examples offline, with no credentials
 	python examples/01_assured_change.py
 	python examples/02_gate_catches_a_drive_by.py
 
-check: lint typecheck test examples   ## Everything CI runs
+layout:                     ## Check the repo structure against CLAUDE.md and the README
+	python3 scripts/check_layout.py
+
+check: lint typecheck test examples layout   ## Everything CI runs
 
 doctor:                     ## Self-tests and provider reachability; reports, never fails
 	-cd $(PY) && python -m llmforge.cli doctor

@@ -22,10 +22,10 @@ Then create:
 
 - `labs/NN-<name>/README.md` — the four answers, a worked example, and a
   results table (empty until someone runs it, and honest about being empty).
-- `packages/python/src/llmforge/labs/<name>.py` — a runnable implementation
+- `packages/llmforge-python/src/llmforge/labs/<name>.py` — a runnable implementation
   whose module docstring carries the same four answers. Export it from
   `labs/__init__.py`.
-- Tests in `packages/python/tests/` exercising it against `FakeProvider`. The
+- Tests in `packages/llmforge-python/tests/` exercising it against `FakeProvider`. The
   tests must cover the failure path, not just the happy one.
 
 Match the existing labs' shape and tone. Read `labs/README.md` first — the bar

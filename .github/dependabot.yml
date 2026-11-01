@@ -12,7 +12,7 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: pip
-    directories: ["/packages/python", "/packages/aicli"]
+    directories: ["/packages/llmforge-python", "/packages/aicli"]
     schedule:
       interval: monthly
     groups:
@@ -20,7 +20,7 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: npm
-    directory: /packages/typescript
+    directory: /packages/llmforge-typescript
     schedule:
       interval: monthly
     groups:

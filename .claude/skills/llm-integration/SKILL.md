@@ -75,12 +75,13 @@ Run `/assure` before proposing a diff. At minimum, on any non-trivial change:
 ## Where things live
 
 ```
-packages/python/src/llmforge/     provider, tools, loop, context, guard, evals,
-                                  assurance, audit, labs/
-packages/typescript/src/          the same core, mirrored
-labs/                             one directory per technique: claim, protocol,
-                                  how it would fail, how to measure it
-docs/                             the reasoning behind all of it
+packages/llmforge-python/src/llmforge/   provider, tools, loop, context, guard, evals,
+                                         assurance, audit, labs/
+packages/llmforge-typescript/src/        the same core, mirrored
+packages/aicli/                          the aicli CLI (stdlib only; its own provider layer)
+labs/                                    one directory per technique: claim, protocol,
+                                         how it would fail, how to measure it
+docs/                                    the reasoning behind all of it
 ```
 
 ## Adding to `labs/`

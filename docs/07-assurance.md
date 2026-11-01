@@ -216,6 +216,6 @@ compare. The library makes that cheap and cannot do it for you.
 
 - The upstream guidelines: `.claude/skills/karpathy-guidelines/SKILL.md`
 - Attribution and license: `THIRD_PARTY_NOTICES.md`
-- The gates: `packages/python/src/llmforge/assurance.py`, `packages/typescript/src/assurance.ts`
+- The gates: `packages/llmforge-python/src/llmforge/assurance.py`, `packages/llmforge-typescript/src/assurance.ts`
 - Their tests, which are the real specification:
-  `packages/python/tests/test_assurance.py`
+  `packages/llmforge-python/tests/test_assurance.py`

@@ -34,8 +34,8 @@ both.
 
 ## Anthropic API changes
 
-The API moves. `packages/python/src/llmforge/provider.py` and
-`packages/typescript/src/provider.ts` hold the version-sensitive parts —
+The API moves. `packages/llmforge-python/src/llmforge/provider.py` and
+`packages/llmforge-typescript/src/provider.ts` hold the version-sensitive parts —
 `ADAPTIVE_THINKING_MODELS`, the `budget_tokens` stripping, streaming
 thresholds. `llmforge/trace.py` holds prices with a `PRICES_AS_OF` date.
 

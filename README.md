@@ -195,6 +195,7 @@ code works* — every lab module is tested, failure paths included.
 | [06 · Frontier index](docs/06-frontier-index.md) | every lab's kill criterion |
 | [07 · Assurance](docs/07-assurance.md) | turning coding principles into controls |
 | [08 · Operations](docs/08-operations.md) | rate limits, `doctor`, retention, and where they came from |
+| [09 · Credentials](docs/09-credentials.md) | every key and service, which are optional, and a checklist to fill in |
 
 ## For Claude Code sessions
 
@@ -231,13 +232,15 @@ aicli list providers
 ## Layout
 
 ```
-packages/python/src/llmforge/   provider, tools, loop, context, guard, evals,
-                                assurance, audit, labs/
-packages/typescript/src/        the same core, mirrored
-packages/aicli/                 aicli: multi-model command-center CLI
-labs/                           claim · protocol · failure mode · measurement
-docs/                           the reasoning behind all of it
-examples/                       run offline, no credentials
+packages/llmforge-python/src/llmforge/   llmforge (Python): provider, tools, loop, context,
+                                         guard, evals, assurance, audit, labs/
+packages/llmforge-typescript/src/        llmforge (TypeScript, @llmforge/core): the same core
+packages/aicli/                          aicli: multi-model command-center CLI (git subtree)
+fixtures/                                parity cases both llmforge implementations must pass
+labs/                                    claim · protocol · failure mode · measurement
+docs/                                    the reasoning behind all of it, read in number order
+examples/                                run offline, no credentials
+scripts/                                 repo checks (layout contract)
 ```
 
 ## License

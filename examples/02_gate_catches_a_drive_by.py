@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages/python/src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages/llmforge-python/src"))
 
 from llmforge.assurance import (  # noqa: E402
     AssumptionLedger,

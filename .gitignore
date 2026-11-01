@@ -12,7 +12,7 @@ dist/
 
 # Node
 node_modules/
-packages/typescript/dist/
+packages/llmforge-typescript/dist/
 *.tsbuildinfo
 
 # Tooling / local state
