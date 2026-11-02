@@ -18,7 +18,7 @@ keywords = ["llm", "cli", "ollama", "anthropic", "openai", "claude"]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=9.2.0", "ruff>=0.17.3"]
 
 [project.scripts]
 aicli = "aicli.cli:main"
