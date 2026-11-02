@@ -9,7 +9,7 @@
  *
  * The assurance gates are exactly that shape: one contract, two
  * implementations. `fixtures/assurance-parity.json` is the pin. This file runs
- * every case through the TypeScript gates; `packages/python/tests/test_parity.py`
+ * every case through the TypeScript gates; `packages/llmforge-python/tests/test_parity.py`
  * runs the identical file through the Python ones. A finding added to one
  * language and not the other fails here.
  *

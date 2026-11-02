@@ -11,7 +11,7 @@ verdict. Do not fix anything yet; report first.
 2. Run the gates:
 
 ```bash
-cd packages/python && PYTHONPATH=src python3 - <<'PY'
+cd packages/llmforge-python && PYTHONPATH=src python3 - <<'PY'
 import subprocess, sys
 from llmforge.assurance import complexity_budget, diff_discipline
 

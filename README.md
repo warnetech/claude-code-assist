@@ -11,7 +11,7 @@ the Anthropic SDK is optional and lazily imported, so the entire library, its
 tests, and its examples run offline against a scripted provider.
 
 ```bash
-make install && make check     # 247 Python assertions, 123 TypeScript, all offline
+make install && make check     # every test in all three packages, offline, no credentials
 llmforge doctor                # self-test: reports rather than raises
 python examples/02_gate_catches_a_drive_by.py
 ```
@@ -195,6 +195,7 @@ code works* — every lab module is tested, failure paths included.
 | [06 · Frontier index](docs/06-frontier-index.md) | every lab's kill criterion |
 | [07 · Assurance](docs/07-assurance.md) | turning coding principles into controls |
 | [08 · Operations](docs/08-operations.md) | rate limits, `doctor`, retention, and where they came from |
+| [09 · Credentials](docs/09-credentials.md) | every key and service, which are optional, and a checklist to fill in |
 
 ## For Claude Code sessions
 
@@ -206,15 +207,40 @@ code works* — every lab module is tested, failure paths included.
 - **`/assure`** — run the gates against your working tree
 - **`/lab <name>`** — scaffold a new technique with a falsifiable claim
 
+## aicli: the command center
+
+[`packages/aicli`](packages/aicli) is the CLI-to-AI Command Center, merged in
+from `warnetech/CLI-AI-Command-Center-PRD` as a git subtree. It is a
+local-first CLI for Claude, OpenAI-compatible APIs and Ollama, with:
+- cost-, latency- and quality-aware routing
+- budgets and an audit log of what leaves the machine
+- MCP tools (deny by default)
+- templates and resumable chats
+- `compare`, `batch` and `rerun`
+- a GitHub Action
+
+It has no runtime dependencies. Coverage of
+[its PRD](packages/aicli/CLI-AI-Command-Center-PRD.md), feature by feature and
+persona by persona, is in [`packages/aicli/docs/roadmap.md`](packages/aicli/docs/roadmap.md).
+
+```bash
+cd packages/aicli && pip install -e ".[dev]"
+aicli "hello" -m echo/echo      # offline echo provider
+aicli list providers
+```
+
 ## Layout
 
 ```
-packages/python/src/llmforge/   provider, tools, loop, context, guard, evals,
-                                assurance, audit, labs/
-packages/typescript/src/        the same core, mirrored
-labs/                           claim · protocol · failure mode · measurement
-docs/                           the reasoning behind all of it
-examples/                       run offline, no credentials
+packages/llmforge-python/src/llmforge/   llmforge (Python): provider, tools, loop, context,
+                                         guard, evals, assurance, audit, labs/
+packages/llmforge-typescript/src/        llmforge (TypeScript, @llmforge/core): the same core
+packages/aicli/                          aicli: multi-model command-center CLI (git subtree)
+fixtures/                                parity cases both llmforge implementations must pass
+labs/                                    claim · protocol · failure mode · measurement
+docs/                                    the reasoning behind all of it, read in number order
+examples/                                run offline, no credentials
+scripts/                                 repo checks (layout contract)
 ```
 
 ## License

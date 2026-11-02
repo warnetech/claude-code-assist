@@ -8,7 +8,7 @@ project this discipline is borrowed from records the cost in its own source:
 
 The assurance gates are exactly that shape: one contract, two implementations.
 `fixtures/assurance-parity.json` is the pin. This module runs every case
-through the Python gates; `packages/typescript/test/parity.test.ts` runs the
+through the Python gates; `packages/llmforge-typescript/test/parity.test.ts` runs the
 identical file through the TypeScript ones. A finding added to one language
 and not the other fails here.
 

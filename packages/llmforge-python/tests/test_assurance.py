@@ -303,7 +303,7 @@ def _own_sources() -> list[Path]:
     root = Path(__file__).resolve().parents[3]
     return [
         path
-        for path in (root / "packages/python/src").rglob("*.py")
+        for path in (root / "packages/llmforge-python/src").rglob("*.py")
         if not path.name.startswith("_") or path.name == "__init__.py"
     ] + [
         path
