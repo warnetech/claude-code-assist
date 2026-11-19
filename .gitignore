@@ -26,5 +26,10 @@ packages/llmforge-typescript/dist/
 traces/
 *.trace.jsonl
 
+# Clawness — per-machine session state (memory.md and rules/ stay shared)
+.clawness/*
+!.clawness/memory.md
+!.clawness/rules/
+
 # TS build inputs installed locally
 package-lock.json
